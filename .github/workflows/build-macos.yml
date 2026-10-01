@@ -37,12 +37,13 @@ jobs:
       commit: ${{ steps.request.outputs.commit }}
       version: ${{ steps.request.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: 24
+          package-manager-cache: false
       - name: Check distribution request validation
         run: node --test scripts/*.test.mjs
       - name: Read-only token for source repositories
@@ -81,7 +82,7 @@ jobs:
       CRYSTAL_BUILD_ARCH: ${{ matrix.arch }}
     steps:
       - name: Checkout public distribution tooling
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Set artifact directory
@@ -102,20 +103,21 @@ jobs:
           SOURCE_READ_TOKEN: ${{ steps.source-token.outputs.token }}
         run: bash scripts/private-step.sh Checkout bash "$GITHUB_WORKSPACE/scripts/checkout-source.sh"
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6.1.0
         with:
           version: 9.15.9
       - name: Setup portable Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7.0.0
         with:
           node-version: 24
+          package-manager-cache: false
       - name: Install private workspace dependencies
         run: bash scripts/private-step.sh Dependencies pnpm install --frozen-lockfile --ignore-scripts
       - name: Install pinned Rust
         run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rust-src --target wasm32-unknown-emscripten
       - name: Cache public emsdk
         id: emsdk
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/emsdk
           key: public-emsdk-${{ runner.os }}-${{ runner.arch }}-${{ env.EMSDK_VERSION }}
@@ -130,7 +132,7 @@ jobs:
       # Source, Cargo targets, registry trees and WASM outputs are not cached.
       - name: Restore public pinned Tauri CLI
         id: tauri-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6.1.0
         with:
           path: ~/.cargo/bin/cargo-tauri
           key: public-tauri-cli-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ env.TAURI_CLI_VERSION }}
@@ -142,7 +144,7 @@ jobs:
           test "$(cargo tauri --version)" = "tauri-cli $TAURI_CLI_VERSION"
       - name: Save validated public CLI
         if: steps.tauri-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6.1.0
         with:
           path: ~/.cargo/bin/cargo-tauri
           key: ${{ steps.tauri-cache.outputs.cache-primary-key }}
@@ -153,7 +155,7 @@ jobs:
       - name: Prepare explicit public artifact allowlist
         run: node scripts/prepare-artifacts.mjs
       - name: Upload only installer and checksum
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: crystal-macos-${{ matrix.arch }}
           path: |
@@ -161,6 +163,7 @@ jobs:
             ${{ runner.temp }}/crystal-public-artifacts/SHA256SUMS
           if-no-files-found: error
           retention-days: 7
+          archive: true
       - name: Remove private checkout and diagnostics
         if: always()
         run: |
