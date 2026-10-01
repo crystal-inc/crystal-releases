@@ -71,8 +71,10 @@ jobs:
         include:
           - runner: macos-26
             arch: aarch64
+            rust-host: aarch64-apple-darwin
           - runner: macos-26-intel
             arch: x86_64
+            rust-host: x86_64-apple-darwin
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:
@@ -111,10 +113,43 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
+      - name: Prepare dependency cache fingerprints
+        id: dependencies
+        run: node scripts/cache-inputs.mjs
+      - name: Restore public pnpm registry packages
+        if: steps.dependencies.outputs.pnpm_public == 'true'
+        id: pnpm-cache
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: ${{ runner.temp }}/crystal-pnpm-store
+          key: public-pnpm-${{ runner.os }}-${{ runner.arch }}-9.15.9-v1-${{ steps.dependencies.outputs.pnpm_key }}
+          restore-keys: public-pnpm-${{ runner.os }}-${{ runner.arch }}-9.15.9-v1-
+      - name: Fetch packages in isolation from application source
+        if: steps.dependencies.outputs.pnpm_public == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        run: bash scripts/private-step.sh Registry-packages bash "$GITHUB_WORKSPACE/scripts/fetch-public-packages.sh"
+      - name: Save public packages before any application install or build
+        if: steps.dependencies.outputs.pnpm_public == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ${{ runner.temp }}/crystal-pnpm-store
+          key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
       - name: Install private workspace dependencies
-        run: bash scripts/private-step.sh Dependencies pnpm install --frozen-lockfile --ignore-scripts
+        run: bash scripts/private-step.sh Dependencies pnpm install --frozen-lockfile --ignore-scripts --prefer-offline --store-dir "$RUNNER_TEMP/crystal-pnpm-store"
+      - name: Cache public Rust toolchain
+        uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains/${{ env.RUSTUP_TOOLCHAIN }}-${{ matrix.rust-host }}
+            ~/.rustup/update-hashes/${{ env.RUSTUP_TOOLCHAIN }}-${{ matrix.rust-host }}
+          key: public-rust-${{ runner.os }}-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-minimal-src-emscripten-v1
       - name: Install pinned Rust
         run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rust-src --target wasm32-unknown-emscripten
+      - name: Cache only public crates.io download archives
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cargo/registry/cache/index.crates.io-*/*.crate
+          key: public-cargo-crates-${{ runner.os }}-${{ runner.arch }}-v1-${{ steps.dependencies.outputs.cargo_key }}
+          restore-keys: public-cargo-crates-${{ runner.os }}-${{ runner.arch }}-v1-
       - name: Cache public emsdk
         id: emsdk
         uses: actions/cache@v6.1.0
@@ -129,7 +164,8 @@ jobs:
           "$HOME/emsdk/emsdk" activate "$EMSDK_VERSION"
       - name: Activate emsdk
         run: echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
-      # Source, Cargo targets, registry trees and WASM outputs are not cached.
+      # Application source, Cargo targets, extracted registry sources and WASM
+      # outputs are not cached. pnpm's public store is saved before private work.
       - name: Restore public pinned Tauri CLI
         id: tauri-cache
         uses: actions/cache/restore@v6.1.0
@@ -168,4 +204,5 @@ jobs:
         if: always()
         run: |
           rm -rf "$RUNNER_TEMP/crystal-source" "$RUNNER_TEMP/crystal-release"
+          rm -rf "$RUNNER_TEMP/crystal-dependency-fetch" "$RUNNER_TEMP/crystal-pnpm-store"
           rm -f "$RUNNER_TEMP"/crystal-private-*.log

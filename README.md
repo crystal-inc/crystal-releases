@@ -37,4 +37,15 @@ Public workflows accept manual requests by maintainers and dispatches from this
 App. They never run for public pull requests. Private checkout, installation,
 compiler and test output stays off public logs. Only the explicit DMG/checksum
 allowlist is uploaded; private source and compiler caches are never uploaded.
-Public caches contain only the Emscripten SDK and the pinned Tauri CLI.
+Public caches contain the Emscripten SDK, pinned Tauri CLI, public Rust toolchain,
+crates.io download archives and public npm registry packages. Keys include the
+architecture, tool versions or dependency lock fingerprints. Existing packages
+can be reused when a lock changes; the package managers still verify the requested
+versions and integrity. GitHub may evict a cache, so a missing cache remains safe.
+
+The pnpm store is filled in a separate directory using only an integrity-only
+lockfile and the public npm registry, with scripts disabled. It is saved **before**
+installing or building private workspaces; subsequent private changes to the store
+are not uploaded. File/Git/URL resolutions and patched packages disable this cache.
+`node_modules`, private workspace files, Cargo targets, Git dependencies, extracted
+crate sources and project WASM output are never part of these cache paths.
