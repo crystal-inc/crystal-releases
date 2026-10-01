@@ -3,6 +3,9 @@
 Crystal installers and distribution workflows. Application source is maintained
 in separate repositories; this repository contains only distribution tooling.
 
+Run the dependency-free tooling tests with `npm test`. Runtime scripts live in
+`scripts/`; their tests live in `scripts/test/`.
+
 ## Test a macOS build
 
 Open **Actions → Build macOS installers → Run workflow**. Select a trusted source

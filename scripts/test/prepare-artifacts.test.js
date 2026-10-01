@@ -21,7 +21,7 @@ test("only the requested DMG and checksum leave the private output directory", a
   const run = () =>
     spawnSync(
       process.execPath,
-      [new URL("./prepare-artifacts.mjs", import.meta.url).pathname],
+      [new URL("../prepare-artifacts.js", import.meta.url).pathname],
       {
         env: {
           ...process.env,

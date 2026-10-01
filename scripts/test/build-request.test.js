@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseBuildRequest, resolveBuildRequest } from "./build-request.mjs";
+import { parseBuildRequest, resolveBuildRequest } from "../build-request.js";
 
 const commit = "a".repeat(40);
 const helper = "b".repeat(40);

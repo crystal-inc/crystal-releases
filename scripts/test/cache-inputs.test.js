@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   canCachePublicPnpmPackages,
   dependencyFingerprint,
-} from "./cache-inputs.mjs";
+} from "../cache-inputs.js";
 
 const lockfile = `lockfileVersion: '9.0'
 importers:

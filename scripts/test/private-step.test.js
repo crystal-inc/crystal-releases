@@ -13,7 +13,7 @@ test("failed private commands disclose neither source output nor retained log fi
     const result = spawnSync(
       "bash",
       [
-        fileURLToPath(new URL("./private-step.sh", import.meta.url)),
+        fileURLToPath(new URL("../private-step.sh", import.meta.url)),
         "Tests",
         "bash",
         "-c",
