@@ -187,7 +187,7 @@ jobs:
       - name: Check native lifecycle and release metadata
         run: bash scripts/private-step.sh Tests pnpm --dir apps/native exec vitest run --config vitest.release.config.ts
       - name: Build and verify ad-hoc signed DMG
-        run: bash scripts/private-step.sh Packaging node --env-file=apps/native/hosted.env --import tsx apps/native/scripts/distributeMacos.ts
+        run: bash scripts/private-step.sh Packaging node --env-file=apps/native/hosted.env --import tsx apps/native/scripts/build/distributeMacos.ts
       - name: Prepare explicit public artifact allowlist
         run: node scripts/prepare-artifacts.js
       - name: Upload only installer and checksum
