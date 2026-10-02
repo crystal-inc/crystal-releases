@@ -36,6 +36,7 @@ jobs:
     outputs:
       commit: ${{ steps.request.outputs.commit }}
       version: ${{ steps.request.outputs.version }}
+      kind: ${{ steps.request.outputs.kind }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -213,3 +214,39 @@ jobs:
           rm -rf "$RUNNER_TEMP/crystal-source" "$RUNNER_TEMP/crystal-release"
           rm -rf "$RUNNER_TEMP/crystal-dependency-fetch" "$RUNNER_TEMP/crystal-pnpm-store"
           rm -f "$RUNNER_TEMP"/crystal-private-*.log
+
+  nightly:
+    name: Publish verified nightly installers
+    needs: [prepare, build]
+    if: needs.prepare.outputs.kind == 'nightly'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: release-channels
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Install release tooling
+        run: npm ci --ignore-scripts
+      - name: Download only verified architecture artifacts
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: crystal-macos-*
+          path: ${{ runner.temp }}/crystal-channel-artifacts
+      - name: Publish nightly and update its channel pointer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CRYSTAL_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          CRYSTAL_SOURCE_SHA: ${{ needs.prepare.outputs.commit }}
+          CRYSTAL_ARTIFACTS_DIRECTORY: ${{ runner.temp }}/crystal-channel-artifacts
+        run: npm run release -- nightly

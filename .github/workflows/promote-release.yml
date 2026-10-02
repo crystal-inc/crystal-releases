@@ -1,0 +1,57 @@
+name: Promote Crystal release
+run-name: Promote build ${{ inputs.build_id || 'current' }} to ${{ inputs.target }} from ${{ inputs.target == 'latest' && 'nightly' || inputs.stable_source }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Destination channel
+        type: choice
+        options: [latest, stable]
+        default: latest
+        required: true
+      build_id:
+        description: Build ID from a channel release; leave empty for the current build in the selected source
+        type: string
+        required: false
+      stable_source:
+        description: Source for stable; latest always comes from nightly
+        type: choice
+        options: [latest, nightly]
+        default: latest
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-channels
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote verified installers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Install release tooling
+        run: npm ci --ignore-scripts
+      - name: Check types and promotion rules
+        run: |
+          npm run check-types
+          npm test
+      - name: Promote exactly the selected verified build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TARGET: ${{ inputs.target }}
+          RELEASE_SOURCE: ${{ inputs.target == 'latest' && 'nightly' || inputs.stable_source }}
+          RELEASE_BUILD_ID: ${{ inputs.build_id }}
+        run: npm run release -- promote --target "$RELEASE_TARGET" --source "$RELEASE_SOURCE" --build "$RELEASE_BUILD_ID"

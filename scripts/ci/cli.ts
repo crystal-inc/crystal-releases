@@ -10,15 +10,12 @@ import {
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { versionSchema, buildIdSchema } from "../release/channels.ts";
 
 const commitSchema = z
   .string()
   .length(40)
   .regex(/^[a-f0-9]{40}$/u);
-const versionSchema = z
-  .string()
-  .regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u)
-  .refine((value) => value.trim() === value);
 const sourceRefSchema = z
   .string()
   .regex(/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,199}$/u)
@@ -30,6 +27,7 @@ const sourceRefSchema = z
 interface BuildRequest {
   readonly sourceRef: string;
   readonly version: string;
+  readonly kind: "test" | "nightly";
 }
 
 export function parseBuildRequest(
@@ -51,6 +49,7 @@ export function parseBuildRequest(
       return {
         sourceRef: result.data.inputs.source_ref,
         version: result.data.inputs.version,
+        kind: "test",
       };
     }
     case "repository_dispatch": {
@@ -63,6 +62,7 @@ export function parseBuildRequest(
             login: z.literal(`${appSlug}[bot]`),
           }),
           client_payload: z.object({
+            build_kind: z.enum(["test", "nightly"]),
             source_repository: z.literal("crystal-inc/crystal"),
             source_sha: commitSchema,
             version: versionSchema,
@@ -76,6 +76,7 @@ export function parseBuildRequest(
       return {
         sourceRef: result.data.client_payload.source_sha,
         version: result.data.client_payload.version,
+        kind: result.data.client_payload.build_kind,
       };
     }
     default:
@@ -95,6 +96,7 @@ export async function resolveBuildRequest(
   request: BuildRequest,
   token: string,
   requestFetch: RequestFetch = fetch,
+  sequence?: string,
 ) {
   if (!token) throw new Error("Source token is missing");
   const get = async (path: string): Promise<unknown> => {
@@ -148,7 +150,33 @@ export async function resolveBuildRequest(
     );
   if (!helperCommit.success)
     throw new Error("Pinned helper commit is unavailable");
-  return { commit: source.data.sha, version: request.version };
+  let version = request.version;
+  if (request.kind === "nightly") {
+    const configFile = z
+      .object({ encoding: z.literal("base64"), content: z.string() })
+      .safeParse(
+        await get(
+          `crystal-inc/crystal/contents/apps/native/src-tauri/tauri.conf.json?ref=${source.data.sha}`,
+        ),
+      );
+    if (!configFile.success)
+      throw new Error("Source application version is unavailable");
+    let config: unknown;
+    try {
+      config = JSON.parse(
+        Buffer.from(configFile.data.content, "base64").toString("utf8"),
+      );
+    } catch {
+      throw new Error("Source application version is invalid");
+    }
+    const base = z.object({ version: versionSchema }).safeParse(config);
+    const counter = buildIdSchema.safeParse(sequence);
+    if (!base.success || !counter.success)
+      throw new Error("Nightly version configuration is invalid");
+    // Channel names are independent of app versions, so promotion preserves the binary.
+    version = `${base.data.version.split(".").slice(0, 2).join(".")}.${counter.data}`;
+  }
+  return { commit: source.data.sha, version, kind: request.kind };
 }
 
 function requiredEnv(name: string): string {
@@ -169,10 +197,12 @@ async function prepareBuildRequest(): Promise<void> {
   const build = await resolveBuildRequest(
     request,
     requiredEnv("SOURCE_READ_TOKEN"),
+    fetch,
+    process.env.GITHUB_RUN_NUMBER,
   );
   await appendFile(
     requiredEnv("GITHUB_OUTPUT"),
-    `commit=${build.commit}\nversion=${build.version}\n`,
+    `commit=${build.commit}\nversion=${build.version}\nkind=${build.kind}\n`,
   );
   console.log("Source commit and pinned helper access verified.");
 }

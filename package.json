@@ -3,8 +3,9 @@
   "type": "module",
   "scripts": {
     "ci": "node --import tsx scripts/ci/cli.ts",
-    "test": "node --import tsx --test scripts/ci/__tests__/*.test.ts",
-    "check-types": "tsc --noEmit"
+    "test": "node --import tsx --test scripts/ci/__tests__/*.test.ts scripts/release/__tests__/*.test.ts",
+    "check-types": "tsc --noEmit",
+    "release": "node --import tsx scripts/release/cli.ts"
   },
   "devDependencies": {
     "@types/node": "24.12.4",

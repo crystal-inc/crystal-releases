@@ -12,6 +12,7 @@ const dispatch = {
   sender: { type: "Bot", login: "crystal-release-publisher[bot]" },
   client_payload: {
     source_repository: "crystal-inc/crystal",
+    build_kind: "test",
     source_sha: commit,
     version: "0.1.0",
   },
@@ -36,7 +37,7 @@ test("maintainer reference is resolved once before both architecture builds", as
       return { ok: true, json: async () => responses.shift() };
     },
   );
-  assert.deepEqual(result, { commit, version: "0.1.0" });
+  assert.deepEqual(result, { commit, version: "0.1.0", kind: "test" });
   assert.equal(calls.length, 3);
   assert.match(calls[1], new RegExp(`ref=${commit}$`));
   assert.match(calls[2], new RegExp(`/crystal-server/commits/${helper}$`));
@@ -49,7 +50,7 @@ test("only the configured App can dispatch private source commits", () => {
       dispatch,
       "crystal-release-publisher",
     ),
-    { sourceRef: commit, version: "0.1.0" },
+    { sourceRef: commit, version: "0.1.0", kind: "test" },
   );
   for (const event of [
     {
@@ -113,7 +114,7 @@ test("untrusted references and versions cannot escape the input boundary", () =>
 test("source access errors never include a private API response body", async () => {
   await assert.rejects(
     resolveBuildRequest(
-      { sourceRef: "main", version: "0.1.0" },
+      { sourceRef: "main", version: "0.1.0", kind: "test" },
       "test-token",
       async () => ({
         ok: false,
@@ -135,11 +136,67 @@ test("helper must be the expected repository and accessible pinned commit", asyn
     ];
     await assert.rejects(
       resolveBuildRequest(
-        { sourceRef: "main", version: "0.1.0" },
+        { sourceRef: "main", version: "0.1.0", kind: "test" },
         "test-token",
         async () => ({ ok: true, json: async () => responses.shift() }),
       ),
       /unexpected helper/,
     );
   }
+});
+
+test("nightly versions follow the pinned app release line and the CI sequence", async () => {
+  for (const [base, sequence, expected] of [
+    ["0.1.0", "124", "0.1.124"],
+    ["1.2.3", "125", "1.2.125"],
+  ]) {
+    const responses: unknown[] = [
+      { sha: commit },
+      {
+        sha: helper,
+        submodule_git_url: "git@github.com:crystal-inc/crystal-server.git",
+      },
+      { sha: helper },
+      {
+        encoding: "base64",
+        content: Buffer.from(JSON.stringify({ version: base })).toString(
+          "base64",
+        ),
+      },
+    ];
+    const request = parseBuildRequest(
+      "repository_dispatch",
+      {
+        ...dispatch,
+        client_payload: { ...dispatch.client_payload, build_kind: "nightly" },
+      },
+      "crystal-release-publisher",
+    );
+    const result = await resolveBuildRequest(
+      request,
+      "test-token",
+      async () => ({ ok: true, json: async () => responses.shift() }),
+      sequence,
+    );
+    assert.deepEqual(result, { commit, version: expected, kind: "nightly" });
+  }
+});
+
+test("manual builds cannot request nightly publication", () => {
+  assert.equal(
+    parseBuildRequest("workflow_dispatch", {
+      inputs: { ...manual.inputs, build_kind: "nightly" },
+    }).kind,
+    "test",
+  );
+  assert.throws(() =>
+    parseBuildRequest(
+      "repository_dispatch",
+      {
+        ...dispatch,
+        client_payload: { ...dispatch.client_payload, build_kind: "stable" },
+      },
+      "crystal-release-publisher",
+    ),
+  );
 });

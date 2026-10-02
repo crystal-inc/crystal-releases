@@ -10,5 +10,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["scripts/ci/**/*.ts"]
+  "include": ["scripts/**/*.ts"]
 }
