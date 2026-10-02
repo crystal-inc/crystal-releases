@@ -44,8 +44,12 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
+      - name: Install CI tooling
+        run: npm ci --ignore-scripts
       - name: Check distribution request validation
-        run: npm test
+        run: |
+          npm run check-types
+          npm test
       - name: Read-only token for source repositories
         id: source-token
         uses: actions/create-github-app-token@v3
@@ -60,7 +64,7 @@ jobs:
         env:
           RELEASE_APP_SLUG: ${{ steps.source-token.outputs.app-slug }}
           SOURCE_READ_TOKEN: ${{ steps.source-token.outputs.token }}
-        run: node scripts/ci/build-request.js
+        run: npm run ci -- request
 
   build:
     name: macOS ${{ matrix.arch }}
@@ -80,7 +84,6 @@ jobs:
     env:
       CRYSTAL_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       CRYSTAL_SOURCE_SHA: ${{ needs.prepare.outputs.commit }}
-      CRYSTAL_RELEASE_MODE: build
       CRYSTAL_BUILD_ARCH: ${{ matrix.arch }}
     steps:
       - name: Checkout public distribution tooling
@@ -113,9 +116,11 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
+      - name: Install CI tooling
+        run: npm ci --ignore-scripts
       - name: Prepare dependency cache fingerprints
         id: dependencies
-        run: node scripts/ci/cache-inputs.js
+        run: npm run ci -- cache
       - name: Restore public pnpm registry packages
         if: steps.dependencies.outputs.pnpm_public == 'true'
         id: pnpm-cache
@@ -184,12 +189,14 @@ jobs:
         with:
           path: ~/.cargo/bin/cargo-tauri
           key: ${{ steps.tauri-cache.outputs.cache-primary-key }}
+      - name: Check native tooling types
+        run: bash scripts/ci/private-step.sh Types pnpm --dir apps/native exec tsc -p tsconfig.node.json --noEmit
       - name: Check native lifecycle and release metadata
         run: bash scripts/ci/private-step.sh Tests pnpm --dir apps/native exec vitest run --config vitest.release.config.ts
       - name: Build and verify ad-hoc signed DMG
-        run: bash scripts/ci/private-step.sh Packaging node --env-file=apps/native/hosted.env --import tsx apps/native/scripts/release/distributeMacos.ts
+        run: bash scripts/ci/private-step.sh Packaging pnpm --dir apps/native run release:package
       - name: Prepare explicit public artifact allowlist
-        run: node scripts/ci/prepare-artifacts.js
+        run: npm run ci -- artifacts
       - name: Upload only installer and checksum
         uses: actions/upload-artifact@v7.0.1
         with:

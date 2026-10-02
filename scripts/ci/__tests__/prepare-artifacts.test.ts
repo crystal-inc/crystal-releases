@@ -21,7 +21,12 @@ test("only the requested DMG and checksum leave the private output directory", a
   const run = () =>
     spawnSync(
       process.execPath,
-      [new URL("../prepare-artifacts.js", import.meta.url).pathname],
+      [
+        "--import",
+        "tsx",
+        new URL("../cli.ts", import.meta.url).pathname,
+        "artifacts",
+      ],
       {
         env: {
           ...process.env,
@@ -45,7 +50,8 @@ test("only the requested DMG and checksum leave the private output directory", a
     const metadata = {
       version: "0.1.0",
       architecture: "aarch64",
-      signed: false,
+      appSigning: "adhoc",
+      updaterSigning: "unsigned",
       commit,
     };
     const metadataPath = join(source, "build-aarch64.json");
@@ -54,10 +60,24 @@ test("only the requested DMG and checksum leave the private output directory", a
       JSON.stringify({ ...metadata, commit: "b".repeat(40) }),
     );
     assert.notEqual(run().status, 0, "wrong source commit must be rejected");
+    for (const invalid of [
+      null,
+      {},
+      { ...metadata, appSigning: "developer-id" },
+      { ...metadata, updaterSigning: "signed" },
+    ]) {
+      await writeFile(metadataPath, JSON.stringify(invalid));
+      assert.notEqual(run().status, 0, "unexpected metadata must be rejected");
+    }
+    const destination = join(temporary, "crystal-public-artifacts");
+    await mkdir(destination);
+    await writeFile(
+      join(destination, "stale-private-file.ts"),
+      "must not leave CI",
+    );
     await writeFile(metadataPath, JSON.stringify(metadata));
     const result = run();
     assert.equal(result.status, 0, result.stderr);
-    const destination = join(temporary, "crystal-public-artifacts");
     assert.deepEqual(
       (await readdir(destination)).sort(),
       [installer, "SHA256SUMS"].sort(),

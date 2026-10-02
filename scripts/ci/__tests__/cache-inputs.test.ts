@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  canCachePublicPnpmPackages,
-  dependencyFingerprint,
-} from "../cache-inputs.js";
+import { canCachePublicPnpmPackages, dependencyFingerprint } from "../cli.ts";
 
 const lockfile = `lockfileVersion: '9.0'
 importers:

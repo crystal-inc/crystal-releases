@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseBuildRequest, resolveBuildRequest } from "../build-request.js";
+import { parseBuildRequest, resolveBuildRequest } from "../cli.ts";
 
 const commit = "a".repeat(40);
 const helper = "b".repeat(40);
@@ -18,7 +18,7 @@ const dispatch = {
 };
 
 test("maintainer reference is resolved once before both architecture builds", async () => {
-  const calls = [];
+  const calls: string[] = [];
   const responses = [
     { sha: commit },
     {
