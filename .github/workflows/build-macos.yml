@@ -60,7 +60,7 @@ jobs:
         env:
           RELEASE_APP_SLUG: ${{ steps.source-token.outputs.app-slug }}
           SOURCE_READ_TOKEN: ${{ steps.source-token.outputs.token }}
-        run: node scripts/build-request.js
+        run: node scripts/ci/build-request.js
 
   build:
     name: macOS ${{ matrix.arch }}
@@ -103,7 +103,7 @@ jobs:
       - name: Fetch pinned source and helper without public checkout logs
         env:
           SOURCE_READ_TOKEN: ${{ steps.source-token.outputs.token }}
-        run: bash scripts/private-step.sh Checkout bash "$GITHUB_WORKSPACE/scripts/checkout-source.sh"
+        run: bash scripts/ci/private-step.sh Checkout bash "$GITHUB_WORKSPACE/scripts/ci/checkout-source.sh"
       - name: Setup pnpm
         uses: pnpm/action-setup@v6.1.0
         with:
@@ -115,7 +115,7 @@ jobs:
           package-manager-cache: false
       - name: Prepare dependency cache fingerprints
         id: dependencies
-        run: node scripts/cache-inputs.js
+        run: node scripts/ci/cache-inputs.js
       - name: Restore public pnpm registry packages
         if: steps.dependencies.outputs.pnpm_public == 'true'
         id: pnpm-cache
@@ -126,7 +126,7 @@ jobs:
           restore-keys: public-pnpm-${{ runner.os }}-${{ runner.arch }}-9.15.9-v1-
       - name: Fetch packages in isolation from application source
         if: steps.dependencies.outputs.pnpm_public == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
-        run: bash scripts/private-step.sh Registry-packages bash "$GITHUB_WORKSPACE/scripts/fetch-public-packages.sh"
+        run: bash scripts/ci/private-step.sh Registry-packages bash "$GITHUB_WORKSPACE/scripts/ci/fetch-public-packages.sh"
       - name: Save public packages before any application install or build
         if: steps.dependencies.outputs.pnpm_public == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
@@ -134,7 +134,7 @@ jobs:
           path: ${{ runner.temp }}/crystal-pnpm-store
           key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
       - name: Install private workspace dependencies
-        run: bash scripts/private-step.sh Dependencies pnpm install --frozen-lockfile --ignore-scripts --prefer-offline --store-dir "$RUNNER_TEMP/crystal-pnpm-store"
+        run: bash scripts/ci/private-step.sh Dependencies pnpm install --frozen-lockfile --ignore-scripts --prefer-offline --store-dir "$RUNNER_TEMP/crystal-pnpm-store"
       - name: Cache public Rust toolchain
         uses: actions/cache@v6.1.0
         with:
@@ -185,11 +185,11 @@ jobs:
           path: ~/.cargo/bin/cargo-tauri
           key: ${{ steps.tauri-cache.outputs.cache-primary-key }}
       - name: Check native lifecycle and release metadata
-        run: bash scripts/private-step.sh Tests pnpm --dir apps/native exec vitest run --config vitest.release.config.ts
+        run: bash scripts/ci/private-step.sh Tests pnpm --dir apps/native exec vitest run --config vitest.release.config.ts
       - name: Build and verify ad-hoc signed DMG
-        run: bash scripts/private-step.sh Packaging node --env-file=apps/native/hosted.env --import tsx apps/native/scripts/build/distributeMacos.ts
+        run: bash scripts/ci/private-step.sh Packaging node --env-file=apps/native/hosted.env --import tsx apps/native/scripts/release/distributeMacos.ts
       - name: Prepare explicit public artifact allowlist
-        run: node scripts/prepare-artifacts.js
+        run: node scripts/ci/prepare-artifacts.js
       - name: Upload only installer and checksum
         uses: actions/upload-artifact@v7.0.1
         with:
