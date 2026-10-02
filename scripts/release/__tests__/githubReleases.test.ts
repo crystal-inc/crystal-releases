@@ -4,40 +4,14 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { GithubReleaseRepository } from "../githubReleases.ts";
-import { buildRecordSchema, channelRecordSchema } from "../channels.ts";
 
-const bytes = Buffer.from("verified installer");
-const checksum = createHash("sha256").update(bytes).digest("hex");
-const build = buildRecordSchema.parse({
-  schemaVersion: 1,
-  buildId: "123",
-  version: "0.1.123",
-  sourceCommit: "a".repeat(40),
-  installers: {
-    aarch64: {
-      name: "Crystal_0.1.123_darwin-aarch64.dmg",
-      size: bytes.length,
-      sha256: checksum,
-    },
-    x86_64: {
-      name: "Crystal_0.1.123_darwin-x86_64.dmg",
-      size: bytes.length,
-      sha256: checksum,
-    },
-  },
-});
-const channel = channelRecordSchema.parse({
-  schemaVersion: 1,
-  channel: "nightly",
-  buildId: "123",
-  sourceChannel: null,
-  actor: "builder",
-});
+import { build, artifacts, nightly as channel } from "./fixtures.ts";
 
 for (const corrupt of [false, true])
   test(`publication validates server checksums before exposing releases and channel pointers (${corrupt ? "corrupt" : "valid"})`, async () => {
     const writes: { path: string; body: unknown }[] = [];
     let created = false;
+    let manifest: Record<string, unknown> | undefined;
     let assets: { name: string; size: number; digest: string }[] = [];
     const repository = new GithubReleaseRepository("test-token", {
       gh: (args) => {
@@ -46,6 +20,8 @@ for (const corrupt of [false, true])
           assert.equal(args.includes("--clobber"), false);
           assets = args.slice(args.indexOf("--repo") + 2).map((path) => {
             const file = readFileSync(path);
+            if (path.endsWith("/latest.json"))
+              manifest = JSON.parse(file.toString("utf8"));
             return {
               name: path.split("/").at(-1)!,
               size: file.length,
@@ -82,10 +58,7 @@ for (const corrupt of [false, true])
         return Response.json({});
       },
     });
-    const publish = repository.publish(build, channel, {
-      aarch64: bytes,
-      x86_64: bytes,
-    });
+    const publish = repository.publish(build, channel, artifacts);
     if (corrupt) {
       await assert.rejects(publish);
       assert.equal(writes.length, 0);
@@ -98,6 +71,25 @@ for (const corrupt of [false, true])
         make_latest: "false",
       });
       assert.equal(writes[1]?.path, "contents/channels/nightly.json");
+      assert.equal(manifest?.version, build.version);
+      assert.deepEqual(manifest?.installationPolicy, { kind: "automatic" });
+      const pointer = JSON.parse(
+        Buffer.from(
+          (writes[1]!.body as { content: string }).content,
+          "base64",
+        ).toString("utf8"),
+      );
+      assert.deepEqual(pointer.platforms, manifest?.platforms);
+      for (const [arch, updater] of Object.entries(build.updaters)) {
+        assert.equal(
+          pointer.platforms[`darwin-${arch}`].signature,
+          updater.signature,
+        );
+        assert.equal(
+          pointer.platforms[`darwin-${arch}`].url,
+          `https://github.com/crystal-inc/crystal-releases/releases/download/nightly-123/${updater.name}`,
+        );
+      }
     }
   });
 
@@ -158,7 +150,7 @@ test("a slow old nightly cannot move the current channel backwards", async () =>
       return Response.json({});
     },
   });
-  await repository.publish(build, channel, { aarch64: bytes, x86_64: bytes });
+  await repository.publish(build, channel, artifacts);
   assert.equal(pointerWrites, 0);
 });
 
@@ -216,17 +208,14 @@ for (const changed of [false, true])
         return Response.json({});
       },
     });
-    const publish = repository.publish(build, channel, {
-      aarch64: bytes,
-      x86_64: bytes,
-    });
+    const publish = repository.publish(build, channel, artifacts);
     if (changed) {
       await assert.rejects(publish);
       assert.deepEqual(uploaded, []);
       assert.deepEqual(writes, []);
     } else {
       await publish;
-      assert.equal(uploaded.length, 4);
+      assert.equal(uploaded.length, 9);
       assert.equal(uploaded.includes("build.json"), false);
       assert.deepEqual(writes, [
         "releases/1",
@@ -250,7 +239,7 @@ test("a published release is verified again and never overwritten on retry", asy
             ? `${JSON.stringify(build)}\n`
             : name === "channel.json"
               ? `${JSON.stringify(channel)}\n`
-              : bytes;
+              : artifacts[name]!;
         writeFileSync(join(directory, name), content);
       }
     },
@@ -277,6 +266,6 @@ test("a published release is verified again and never overwritten on retry", asy
       return Response.json({});
     },
   });
-  await repository.publish(build, channel, { aarch64: bytes, x86_64: bytes });
+  await repository.publish(build, channel, artifacts);
   assert.deepEqual(writes, ["contents/channels/nightly.json"]);
 });

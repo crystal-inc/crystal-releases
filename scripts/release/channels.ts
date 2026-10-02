@@ -13,6 +13,14 @@ export const versionSchema = z
   .string()
   .regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u)
   .refine((value) => value.trim() === value);
+export const signatureSchema = z
+  .string()
+  .min(1)
+  .max(8192)
+  .refine(
+    (value) => Buffer.from(value, "base64").toString("base64") === value,
+    "Updater signature must be canonical base64",
+  );
 const assetSchema = z
   .object({
     name: z.string().min(1),
@@ -34,6 +42,12 @@ export const buildRecordSchema = z
       .string()
       .length(40)
       .regex(/^[a-f0-9]{40}$/u),
+    updaters: z
+      .object({
+        aarch64: assetSchema.extend({ signature: signatureSchema }).strict(),
+        x86_64: assetSchema.extend({ signature: signatureSchema }).strict(),
+      })
+      .strict(),
     installers: z
       .object({
         aarch64: assetSchema,
@@ -44,6 +58,14 @@ export const buildRecordSchema = z
   .strict()
   .superRefine((build, context) => {
     for (const arch of macosArchitectures) {
+      if (
+        build.updaters[arch].name !==
+        `Crystal_${build.version}_darwin-${arch}.app.tar.gz`
+      )
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Updater does not match its version and architecture",
+        });
       if (
         build.installers[arch].name !==
         `Crystal_${build.version}_darwin-${arch}.dmg`
@@ -129,7 +151,7 @@ export function requirePromotion(
   return { build, channel };
 }
 
-export function verifyInstaller(
+export function verifyAsset(
   bytes: Buffer,
   expected: BuildRecord["installers"]["aarch64"],
 ): void {
@@ -138,6 +160,80 @@ export function verifyInstaller(
     createHash("sha256").update(bytes).digest("hex") !== expected.sha256
   )
     throw new Error(
-      "Installer checksum or size does not match the verified build",
+      "Artifact checksum or size does not match the verified build",
     );
+}
+
+export type ReleaseArtifacts = Readonly<Record<string, Buffer>>;
+
+/** The allowlist is derived from the verified build, never from directory contents. */
+export function releaseAssets(build: BuildRecord) {
+  return macosArchitectures.flatMap((arch) => {
+    const updater = build.updaters[arch];
+    const bytes = Buffer.from(`${updater.signature}\n`);
+    return [
+      build.installers[arch],
+      updater,
+      {
+        name: `${updater.name}.sig`,
+        size: bytes.length,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      },
+    ];
+  });
+}
+
+export function verifyArtifacts(
+  build: BuildRecord,
+  artifacts: ReleaseArtifacts,
+): void {
+  const assets = releaseAssets(build);
+  if (Object.keys(artifacts).length !== assets.length)
+    throw new Error("Release artifacts do not match the build allowlist");
+  for (const asset of assets) {
+    const bytes = artifacts[asset.name];
+    if (!bytes) throw new Error("Release artifact is missing");
+    verifyAsset(bytes, asset);
+  }
+}
+
+export type ReleaseSource = Readonly<{ kind: "static-http"; baseUrl: string }>;
+export type InstallationPolicy = Readonly<{ kind: "automatic" }>;
+
+export function createUpdateManifest(
+  build: BuildRecord,
+  source: ReleaseSource,
+) {
+  const base = new URL(source.baseUrl);
+  if (
+    base.protocol !== "https:" ||
+    base.username ||
+    base.password ||
+    base.search ||
+    base.hash
+  )
+    throw new Error(
+      "Update storage must have an HTTPS base URL without credentials, query or fragment",
+    );
+  const installationPolicy: InstallationPolicy = { kind: "automatic" };
+  return {
+    schemaVersion: 1,
+    version: build.version,
+    installationPolicy,
+    platforms: Object.fromEntries(
+      macosArchitectures.map((arch) => {
+        const updater = build.updaters[arch];
+        return [
+          `darwin-${arch}`,
+          {
+            url: new URL(updater.name, `${base.href.replace(/\/$/u, "")}/`)
+              .href,
+            signature: updater.signature,
+            sha256: updater.sha256,
+            size: updater.size,
+          },
+        ];
+      }),
+    ),
+  };
 }

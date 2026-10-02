@@ -190,20 +190,46 @@ jobs:
         with:
           path: ~/.cargo/bin/cargo-tauri
           key: ${{ steps.tauri-cache.outputs.cache-primary-key }}
+      - name: Restore public signature verifier downloads
+        id: verifier-cache
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: |
+            ~/Library/Caches/Homebrew/downloads/*--minisign-*
+            ~/Library/Caches/Homebrew/downloads/*--libsodium-*
+          key: public-minisign-bottles-${{ runner.os }}-${{ runner.arch }}-v1-${{ hashFiles('.github/workflows/build-macos.yml') }}
+          restore-keys: public-minisign-bottles-${{ runner.os }}-${{ runner.arch }}-v1-
+      - name: Install signature verifier
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew list minisign >/dev/null 2>&1 || brew install minisign
+      - name: Save verifier downloads before executing private application tooling
+        if: steps.verifier-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: |
+            ~/Library/Caches/Homebrew/downloads/*--minisign-*
+            ~/Library/Caches/Homebrew/downloads/*--libsodium-*
+          key: ${{ steps.verifier-cache.outputs.cache-primary-key }}
       - name: Check native tooling types
         run: bash scripts/ci/private-step.sh Types pnpm --dir apps/native exec tsc -p tsconfig.node.json --noEmit
       - name: Check native lifecycle and release metadata
         run: bash scripts/ci/private-step.sh Tests pnpm --dir apps/native exec vitest run --config vitest.release.config.ts
-      - name: Build and verify ad-hoc signed DMG
-        run: bash scripts/ci/private-step.sh Packaging pnpm --dir apps/native run release:package
+      - name: Build and verify installer and authenticated updater
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bash scripts/ci/private-step.sh Packaging pnpm --dir apps/native run release:package --updater-signing signed
       - name: Prepare explicit public artifact allowlist
         run: npm run ci -- artifacts
-      - name: Upload only installer and checksum
+      - name: Upload only verified distribution artifacts
         uses: actions/upload-artifact@v7.0.1
         with:
           name: crystal-macos-${{ matrix.arch }}
           path: |
             ${{ runner.temp }}/crystal-public-artifacts/Crystal_${{ env.CRYSTAL_RELEASE_VERSION }}_darwin-${{ matrix.arch }}.dmg
+            ${{ runner.temp }}/crystal-public-artifacts/Crystal_${{ env.CRYSTAL_RELEASE_VERSION }}_darwin-${{ matrix.arch }}.app.tar.gz
+            ${{ runner.temp }}/crystal-public-artifacts/Crystal_${{ env.CRYSTAL_RELEASE_VERSION }}_darwin-${{ matrix.arch }}.app.tar.gz.sig
             ${{ runner.temp }}/crystal-public-artifacts/SHA256SUMS
           if-no-files-found: error
           retention-days: 7

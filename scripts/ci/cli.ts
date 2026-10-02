@@ -1,16 +1,13 @@
 import { createHash } from "node:crypto";
-import {
-  appendFile,
-  copyFile,
-  mkdir,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { versionSchema, buildIdSchema } from "../release/channels.ts";
+import {
+  versionSchema,
+  buildIdSchema,
+  signatureSchema,
+} from "../release/channels.ts";
 
 const commitSchema = z
   .string()
@@ -293,23 +290,45 @@ async function prepareArtifacts(): Promise<void> {
       architecture: z.literal(arch),
       commit: z.literal(commit),
       appSigning: z.literal("adhoc"),
-      updaterSigning: z.literal("unsigned"),
+      updaterSigning: z.literal("signed"),
     })
     .safeParse(metadata);
   if (!build.success)
     throw new Error("Artifact metadata does not match the requested build");
-  const installer = `Crystal_${version}_darwin-${arch}.dmg`;
-  const bytes = await readFile(join(source, installer));
-  if (!bytes.length) throw new Error("Installer is empty");
+  const stem = `Crystal_${version}_darwin-${arch}`;
+  const readArtifact = async (name: string) => ({
+    name,
+    bytes: await readFile(join(source, name)),
+  });
+  const [installer, updater, signatureFile] = await Promise.all([
+    readArtifact(`${stem}.dmg`),
+    readArtifact(`${stem}.app.tar.gz`),
+    readArtifact(`${stem}.app.tar.gz.sig`),
+  ]);
+  const files = [installer, updater, signatureFile];
+  if (files.some((file) => !file.bytes.length))
+    throw new Error("Release artifact is empty");
+  const signature = signatureSchema.parse(
+    signatureFile.bytes.toString("utf8").trim(),
+  );
+  signatureFile.bytes = Buffer.from(`${signature}\n`);
   // Never carry over files from a previous invocation into the upload directory.
   await rm(destination, { recursive: true, force: true });
   await mkdir(destination, { recursive: true });
-  await copyFile(join(source, installer), join(destination, installer));
+  for (const file of files)
+    await writeFile(join(destination, file.name), file.bytes);
   await writeFile(
     join(destination, "SHA256SUMS"),
-    `${createHash("sha256").update(bytes).digest("hex")}  ${installer}\n`,
+    files
+      .map(
+        (file) =>
+          `${createHash("sha256").update(file.bytes).digest("hex")}  ${file.name}\n`,
+      )
+      .join(""),
   );
-  console.log("DMG and checksum allowlist prepared.");
+  console.log(
+    "Installer, authenticated updater and checksum allowlist prepared.",
+  );
 }
 
 export async function runCiCli(args: readonly string[]): Promise<void> {

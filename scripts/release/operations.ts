@@ -4,15 +4,17 @@ import {
   buildRecordSchema,
   channelRecordSchema,
   requirePromotion,
-  verifyInstaller,
   promotionSource,
-  macosArchitectures,
+  versionSchema,
+  signatureSchema,
+  verifyAsset,
+  verifyArtifacts,
   type BuildRecord,
   type ChannelRecord,
   type ReleaseChannel,
+  type ReleaseArtifacts,
 } from "./channels.ts";
 
-export type Installers = Readonly<Record<"aarch64" | "x86_64", Buffer>>;
 export interface ReleaseRepository {
   current(channel: ReleaseChannel): Promise<string>;
   read(
@@ -22,13 +24,13 @@ export interface ReleaseRepository {
     Readonly<{
       build: unknown;
       channel: unknown;
-      installers: Installers;
+      artifacts: ReleaseArtifacts;
     }>
   >;
   publish(
     build: BuildRecord,
     channel: ChannelRecord,
-    installers: Installers,
+    artifacts: ReleaseArtifacts,
   ): Promise<void>;
 }
 
@@ -54,15 +56,11 @@ export async function promoteBuild(
   });
   if (promotion.build.buildId !== buildId)
     throw new Error("Repository returned a different build");
-  for (const arch of macosArchitectures)
-    verifyInstaller(
-      selected.installers[arch],
-      promotion.build.installers[arch],
-    );
+  verifyArtifacts(promotion.build, selected.artifacts);
   await repository.publish(
     promotion.build,
     promotion.channel,
-    selected.installers,
+    selected.artifacts,
   );
 }
 
@@ -76,28 +74,65 @@ export async function publishNightly(
   }>,
   repository: ReleaseRepository,
 ): Promise<void> {
-  const readInstaller = async (arch: "aarch64" | "x86_64") => {
-    const name = `Crystal_${input.version}_darwin-${arch}.dmg`;
-    const root = join(input.directory, `crystal-macos-${arch}`);
-    const bytes = await readFile(join(root, name));
-    const sums = await readFile(join(root, "SHA256SUMS"), "utf8");
-    const match = /^([a-f0-9]{64})  (.+)\n$/u.exec(sums);
-    if (!match || match[2] !== name)
-      throw new Error("Installer checksum file is invalid");
-    const record = { name, sha256: match[1]!, size: bytes.length };
-    verifyInstaller(bytes, record);
-    return { bytes, record };
+  const version = versionSchema.parse(input.version);
+  const readArchitecture = async (arch: "aarch64" | "x86_64") => {
+    const stem = `Crystal_${version}_darwin-${arch}`;
+    const installerName = `${stem}.dmg`;
+    const updaterName = `${stem}.app.tar.gz`;
+    const names = [installerName, updaterName, `${updaterName}.sig`];
+    const directory = join(input.directory, `crystal-macos-${arch}`);
+    const sums = new Map<string, string>();
+    for (const line of (await readFile(join(directory, "SHA256SUMS"), "utf8"))
+      .trimEnd()
+      .split("\n")) {
+      const match = /^([a-f0-9]{64})  (.+)$/u.exec(line);
+      const [, digest, name] = match ?? [];
+      if (!digest || !name || !names.includes(name) || sums.has(name))
+        throw new Error("Artifact checksum file is invalid");
+      sums.set(name, digest);
+    }
+    if (sums.size !== names.length)
+      throw new Error("Artifact checksum file is incomplete");
+    const readArtifact = async (name: string) => {
+      const bytes = await readFile(join(directory, name));
+      const sha256 = sums.get(name);
+      if (!sha256) throw new Error("Release artifact checksum is missing");
+      const asset = { name, size: bytes.length, sha256 };
+      verifyAsset(bytes, asset);
+      return { asset, bytes };
+    };
+    const [installer, updater, signature] = await Promise.all([
+      readArtifact(installerName),
+      readArtifact(updaterName),
+      readArtifact(`${updaterName}.sig`),
+    ]);
+    return {
+      installer: installer.asset,
+      updater: {
+        ...updater.asset,
+        signature: signatureSchema.parse(
+          signature.bytes.toString("utf8").trim(),
+        ),
+      },
+      artifacts: Object.fromEntries(
+        [installer, updater, signature].map((file) => [
+          file.asset.name,
+          file.bytes,
+        ]),
+      ),
+    };
   };
   const [arm, intel] = await Promise.all([
-    readInstaller("aarch64"),
-    readInstaller("x86_64"),
+    readArchitecture("aarch64"),
+    readArchitecture("x86_64"),
   ]);
   const build = buildRecordSchema.parse({
     schemaVersion: 1,
     buildId: input.buildId,
-    version: input.version,
+    version,
     sourceCommit: input.sourceCommit,
-    installers: { aarch64: arm.record, x86_64: intel.record },
+    installers: { aarch64: arm.installer, x86_64: intel.installer },
+    updaters: { aarch64: arm.updater, x86_64: intel.updater },
   });
   const channel = channelRecordSchema.parse({
     schemaVersion: 1,
@@ -106,8 +141,7 @@ export async function publishNightly(
     sourceChannel: null,
     actor: input.actor,
   });
-  await repository.publish(build, channel, {
-    aarch64: arm.bytes,
-    x86_64: intel.bytes,
-  });
+  const artifacts = { ...arm.artifacts, ...intel.artifacts };
+  verifyArtifacts(build, artifacts);
+  await repository.publish(build, channel, artifacts);
 }

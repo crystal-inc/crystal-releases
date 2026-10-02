@@ -8,13 +8,15 @@ import {
   buildRecordSchema,
   channelRecordSchema,
   buildIdSchema,
-  verifyInstaller,
-  macosArchitectures,
+  verifyArtifacts,
+  releaseAssets,
+  createUpdateManifest,
+  type ReleaseArtifacts,
   type BuildRecord,
   type ChannelRecord,
   type ReleaseChannel,
 } from "./channels.ts";
-import type { Installers, ReleaseRepository } from "./operations.ts";
+import type { ReleaseRepository } from "./operations.ts";
 
 const repository = "crystal-inc/crystal-releases";
 const repositoryPath = `repos/${repository}`;
@@ -183,6 +185,7 @@ export class GithubReleaseRepository implements ReleaseRepository {
         throw new Error(
           "Release metadata does not match the selected channel and build",
         );
+      const assets = releaseAssets(build);
       this.gh([
         "release",
         "download",
@@ -191,18 +194,21 @@ export class GithubReleaseRepository implements ReleaseRepository {
         repository,
         "--dir",
         directory,
-        "--pattern",
-        build.installers.aarch64.name,
-        "--pattern",
-        build.installers.x86_64.name,
+        ...assets.flatMap((asset) => ["--pattern", asset.name]),
       ]);
-      const [aarch64, x86_64] = await Promise.all([
-        readFile(join(directory, build.installers.aarch64.name)),
-        readFile(join(directory, build.installers.x86_64.name)),
-      ]);
-      verifyInstaller(aarch64, build.installers.aarch64);
-      verifyInstaller(x86_64, build.installers.x86_64);
-      return { build, channel: record, installers: { aarch64, x86_64 } };
+      const artifacts = Object.fromEntries(
+        await Promise.all(
+          assets.map(
+            async (asset) =>
+              [
+                asset.name,
+                await readFile(join(directory, asset.name)),
+              ] as const,
+          ),
+        ),
+      );
+      verifyArtifacts(build, artifacts);
+      return { build, channel: record, artifacts };
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -211,10 +217,9 @@ export class GithubReleaseRepository implements ReleaseRepository {
   async publish(
     build: BuildRecord,
     channel: ChannelRecord,
-    installers: Installers,
+    artifacts: ReleaseArtifacts,
   ): Promise<void> {
-    for (const arch of macosArchitectures)
-      verifyInstaller(installers[arch], build.installers[arch]);
+    verifyArtifacts(build, artifacts);
     const tag = releaseTag(channel.channel, build.buildId);
     const existing = await this.release(tag);
     if (existing !== null && !releaseSchema.parse(existing).draft) {
@@ -231,32 +236,25 @@ export class GithubReleaseRepository implements ReleaseRepository {
     }
     const directory = await mkdtemp(join(tmpdir(), "crystal-publication-"));
     try {
+      const assets = releaseAssets(build);
       const files = [
         "build.json",
         "channel.json",
         "SHA256SUMS",
-        build.installers.aarch64.name,
-        build.installers.x86_64.name,
+        "latest.json",
+        ...assets.map((asset) => asset.name),
       ];
-      for (const arch of macosArchitectures) {
-        await writeFile(
-          join(directory, build.installers[arch].name),
-          installers[arch],
-        );
-      }
+      for (const asset of assets)
+        await writeFile(join(directory, asset.name), artifacts[asset.name]!);
       await writeFile(join(directory, "build.json"), json(build));
       await writeFile(join(directory, "channel.json"), json(channel));
       await writeFile(
         join(directory, "SHA256SUMS"),
-        ["aarch64", "x86_64"]
-          .map((arch) => {
-            const asset =
-              arch === "aarch64"
-                ? build.installers.aarch64
-                : build.installers.x86_64;
-            return `${asset.sha256}  ${asset.name}\n`;
-          })
-          .join(""),
+        assets.map((asset) => `${asset.sha256}  ${asset.name}\n`).join(""),
+      );
+      await writeFile(
+        join(directory, "latest.json"),
+        json(this.manifest(build, channel)),
       );
       if (existing === null) {
         this.gh([
@@ -327,6 +325,13 @@ export class GithubReleaseRepository implements ReleaseRepository {
     }
   }
 
+  private manifest(build: BuildRecord, channel: ChannelRecord) {
+    return createUpdateManifest(build, {
+      kind: "static-http",
+      baseUrl: `https://github.com/${repository}/releases/download/${releaseTag(channel.channel, build.buildId)}`,
+    });
+  }
+
   private async point(
     build: BuildRecord,
     channel: ChannelRecord,
@@ -344,6 +349,7 @@ export class GithubReleaseRepository implements ReleaseRepository {
       if (BigInt(current.buildId) > BigInt(build.buildId)) return;
     }
     const pointer = {
+      ...this.manifest(build, channel),
       schemaVersion: 1,
       channel: channel.channel,
       buildId: build.buildId,

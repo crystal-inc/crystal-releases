@@ -1,32 +1,13 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import test from "node:test";
-import { requirePromotion, verifyInstaller } from "../channels.ts";
+import {
+  requirePromotion,
+  verifyAsset,
+  createUpdateManifest,
+  verifyArtifacts,
+} from "../channels.ts";
 
-const bytes = Buffer.from("verified app");
-const build = {
-  schemaVersion: 1,
-  buildId: "123",
-  version: "0.1.123",
-  sourceCommit: "a".repeat(40),
-  installers: Object.fromEntries(
-    ["aarch64", "x86_64"].map((arch) => [
-      arch,
-      {
-        name: `Crystal_0.1.123_darwin-${arch}.dmg`,
-        size: bytes.length,
-        sha256: createHash("sha256").update(bytes).digest("hex"),
-      },
-    ]),
-  ),
-};
-const nightly = {
-  schemaVersion: 1,
-  channel: "nightly",
-  buildId: "123",
-  sourceChannel: null,
-  actor: "builder",
-};
+import { build, bytes, nightly, artifacts } from "./fixtures.ts";
 
 test("normal promotion preserves the build through nightly, latest and stable", () => {
   const latest = requirePromotion({
@@ -83,12 +64,9 @@ test("source selection never bypasses build identity or installer verification",
     build,
     actor: "maintainer",
   });
-  verifyInstaller(bytes, result.build.installers.aarch64);
+  verifyAsset(bytes, result.build.installers.aarch64);
   assert.throws(() =>
-    verifyInstaller(
-      Buffer.from("modified app"),
-      result.build.installers.aarch64,
-    ),
+    verifyAsset(Buffer.from("modified app"), result.build.installers.aarch64),
   );
   assert.throws(() =>
     requirePromotion({
@@ -138,4 +116,46 @@ test("build IDs reject whitespace, path fragments and option-like values at the 
       }),
     );
   }
+});
+
+test("update manifests use verified signatures and support another HTTPS storage provider", () => {
+  for (const baseUrl of [
+    "https://github.com/crystal-inc/crystal-releases/releases/download/stable-123",
+    "https://downloads.example.com/0.1.123/",
+  ]) {
+    const manifest = createUpdateManifest(build, {
+      kind: "static-http",
+      baseUrl,
+    });
+    assert.deepEqual(manifest.installationPolicy, { kind: "automatic" });
+    const arm = manifest.platforms["darwin-aarch64"]!;
+    assert.equal(arm.signature, build.updaters.aarch64.signature);
+    assert.equal(arm.sha256, build.updaters.aarch64.sha256);
+    assert.equal(
+      arm.url,
+      `${baseUrl.replace(/\/$/u, "")}/${build.updaters.aarch64.name}`,
+    );
+  }
+  for (const baseUrl of [
+    "http://downloads.example.com",
+    "https://user:password@example.com",
+    "https://example.com?token=x",
+    "https://example.com#fragment",
+  ])
+    assert.throws(
+      () => createUpdateManifest(build, { kind: "static-http", baseUrl }),
+      /HTTPS/,
+    );
+});
+
+test("signature files are bound to the updater metadata and extra files cannot be promoted", () => {
+  const tampered = structuredClone(build);
+  tampered.updaters.aarch64.signature = Buffer.from(
+    "different signature",
+  ).toString("base64");
+  assert.throws(() => verifyArtifacts(tampered, artifacts), /checksum/);
+  assert.throws(
+    () => verifyArtifacts(build, { ...artifacts, "private.ts": bytes }),
+    /allowlist/,
+  );
 });

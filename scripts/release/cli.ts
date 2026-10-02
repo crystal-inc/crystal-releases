@@ -68,7 +68,7 @@ export async function runReleaseCli(args: readonly string[]): Promise<void> {
   if (process.env.GITHUB_STEP_SUMMARY)
     await appendFile(
       process.env.GITHUB_STEP_SUMMARY,
-      "Release channel updated using verified, previously built macOS installers.\n",
+      "Release channel updated using verified, previously built macOS installers and signed updater archives.\n",
     );
 }
 

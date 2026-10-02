@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -9,86 +8,58 @@ import {
   publishNightly,
   type ReleaseRepository,
 } from "../operations.ts";
+import { releaseAssets } from "../channels.ts";
+import { build, artifacts, nightly } from "./fixtures.ts";
 
-const bytes = Buffer.from("same verified binary");
-const makeAsset = (arch: string) => ({
-  name: `Crystal_0.1.123_darwin-${arch}.dmg`,
-  size: bytes.length,
-  sha256: createHash("sha256").update(bytes).digest("hex"),
-});
-const build = {
-  schemaVersion: 1,
-  buildId: "123",
-  version: "0.1.123",
-  sourceCommit: "a".repeat(40),
-  installers: { aarch64: makeAsset("aarch64"), x86_64: makeAsset("x86_64") },
-};
-const nightly = {
-  schemaVersion: 1,
-  channel: "nightly",
-  buildId: "123",
-  sourceChannel: null,
-  actor: "builder",
-};
-
-test("both promotion routes publish the same bytes and fail closed on a modified installer", async () => {
+test("both promotion routes preserve every artifact and reject modified installers, archives and signatures", async () => {
   for (const source of ["nightly", "latest"] as const) {
     let publications = 0;
+    const sourceRecord =
+      source === "nightly"
+        ? nightly
+        : { ...nightly, channel: "latest", sourceChannel: "nightly" };
     const repository: ReleaseRepository = {
       current: async () => "123",
       read: async (channel, id) => {
         assert.equal(channel, source);
         assert.equal(id, "123");
-        return {
-          build,
-          channel:
-            source === "nightly"
-              ? nightly
-              : { ...nightly, channel: "latest", sourceChannel: "nightly" },
-          installers: { aarch64: bytes, x86_64: bytes },
-        };
+        return { build, channel: sourceRecord, artifacts };
       },
-      publish: async (record, channel, installers) => {
+      publish: async (record, channel, files) => {
         publications++;
         assert.deepEqual(record, build);
         assert.equal(channel.channel, "stable");
         assert.equal(channel.sourceChannel, source);
-        assert.deepEqual(installers, { aarch64: bytes, x86_64: bytes });
+        assert.deepEqual(files, artifacts);
       },
     };
-    await promoteBuild(
-      { target: "stable", source, buildId: "123", actor: "maintainer" },
-      repository,
-    );
-    assert.equal(publications, 1);
-    const corrupted: ReleaseRepository = {
-      ...repository,
-      read: async () => ({
-        build,
-        channel: nightly,
-        installers: {
-          aarch64: bytes,
-          x86_64: Buffer.from("tampered installer"),
-        },
-      }),
+    const input = {
+      target: "stable" as const,
+      source,
+      buildId: "123",
+      actor: "maintainer",
     };
-    await assert.rejects(
-      promoteBuild(
-        {
-          target: "stable",
-          source: "nightly",
-          buildId: "123",
-          actor: "maintainer",
-        },
-        corrupted,
-      ),
-      /checksum/,
-    );
+    await promoteBuild(input, repository);
     assert.equal(publications, 1);
+    for (const asset of releaseAssets(build)) {
+      const corrupted: ReleaseRepository = {
+        ...repository,
+        read: async () => ({
+          build,
+          channel: sourceRecord,
+          artifacts: {
+            ...artifacts,
+            [asset.name]: Buffer.from("tampered artifact"),
+          },
+        }),
+      };
+      await assert.rejects(promoteBuild(input, corrupted), /checksum/);
+      assert.equal(publications, 1);
+    }
   }
 });
 
-test("nightly publication requires checksum-verified installers for both architectures", async () => {
+test("nightly requires complete checksummed installer, updater and signature for both architectures", async () => {
   const directory = await mkdtemp(join(tmpdir(), "crystal-nightly-test-"));
   let publications = 0;
   const repository: ReleaseRepository = {
@@ -96,11 +67,11 @@ test("nightly publication requires checksum-verified installers for both archite
     read: async () => {
       throw new Error("nightly does not promote an earlier release");
     },
-    publish: async (record, channel, installers) => {
+    publish: async (record, channel, files) => {
       publications++;
       assert.deepEqual(record, build);
       assert.deepEqual(channel, nightly);
-      assert.deepEqual(installers, { aarch64: bytes, x86_64: bytes });
+      assert.deepEqual(files, artifacts);
     },
   };
   const input = {
@@ -114,19 +85,39 @@ test("nightly publication requires checksum-verified installers for both archite
     for (const arch of ["aarch64", "x86_64"] as const) {
       const root = join(directory, `crystal-macos-${arch}`);
       await mkdir(root);
-      await writeFile(join(root, build.installers[arch].name), bytes);
+      const assets = releaseAssets(build).filter((asset) =>
+        asset.name.includes(`darwin-${arch}.`),
+      );
+      for (const asset of assets)
+        await writeFile(join(root, asset.name), artifacts[asset.name]!);
       await writeFile(
         join(root, "SHA256SUMS"),
-        `${build.installers[arch].sha256}  ${build.installers[arch].name}\n`,
+        assets.map((asset) => `${asset.sha256}  ${asset.name}\n`).join(""),
       );
     }
     await publishNightly(input, repository);
     assert.equal(publications, 1);
-    await writeFile(
-      join(directory, "crystal-macos-x86_64", build.installers.x86_64.name),
-      "modified installer",
+    for (const asset of releaseAssets(build)) {
+      const arch = asset.name.includes("aarch64") ? "aarch64" : "x86_64";
+      await writeFile(
+        join(directory, `crystal-macos-${arch}`, asset.name),
+        "modified artifact",
+      );
+      await assert.rejects(publishNightly(input, repository), /checksum/);
+      await writeFile(
+        join(directory, `crystal-macos-${arch}`, asset.name),
+        artifacts[asset.name]!,
+      );
+      assert.equal(publications, 1);
+    }
+    await rm(
+      join(
+        directory,
+        "crystal-macos-x86_64",
+        `${build.updaters.x86_64.name}.sig`,
+      ),
     );
-    await assert.rejects(publishNightly(input, repository), /checksum/);
+    await assert.rejects(publishNightly(input, repository));
     assert.equal(publications, 1);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -143,7 +134,7 @@ test("omitting a build selects current latest for stable and still checks its pr
     read: async (source) => ({
       build,
       channel: { ...nightly, channel: source, sourceChannel: "nightly" },
-      installers: { aarch64: bytes, x86_64: bytes },
+      artifacts,
     }),
     publish: async (record, channel) => {
       assert.deepEqual(record, build);
