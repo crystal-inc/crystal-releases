@@ -3,6 +3,7 @@ import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { notifyStableRelease } from "./release-notify.ts";
 import {
   versionSchema,
   buildIdSchema,
@@ -331,14 +332,35 @@ async function prepareArtifacts(): Promise<void> {
   );
 }
 
+async function prepareReleaseNotification(): Promise<void> {
+  const bytes = await readFile("channels/stable.json");
+  const revision = createHash("sha1")
+    .update(`blob ${bytes.length}\0`)
+    .update(bytes)
+    .digest("hex");
+  await notifyStableRelease({
+    url: process.env.CRYSTAL_RELEASE_NOTIFY_URL ?? "",
+    oidcUrl: process.env.ACTIONS_ID_TOKEN_REQUEST_URL ?? "",
+    oidcToken: process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN ?? "",
+    revision,
+  });
+  console.log(
+    "Stable publication acknowledged; connected apps can check the signed update.",
+  );
+}
+
 export async function runCiCli(args: readonly string[]): Promise<void> {
   if (args.length !== 1)
-    throw new Error("Expected one CI command: request, cache or artifacts");
+    throw new Error(
+      "Expected one CI command: request, cache, artifacts or notify-release",
+    );
   switch (args[0]) {
     case "request":
       return prepareBuildRequest();
     case "cache":
       return prepareCacheInputs();
+    case "notify-release":
+      return prepareReleaseNotification();
     case "artifacts":
       return prepareArtifacts();
     default:

@@ -55,3 +55,28 @@ jobs:
           RELEASE_SOURCE: ${{ inputs.target == 'latest' && 'nightly' || inputs.stable_source }}
           RELEASE_BUILD_ID: ${{ inputs.build_id }}
         run: npm run release -- promote --target "$RELEASE_TARGET" --source "$RELEASE_SOURCE" --build "$RELEASE_BUILD_ID"
+
+  notify:
+    name: Notify connected apps about stable
+    needs: promote
+    if: inputs.target == 'stable'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Install notification tooling
+        run: npm ci --ignore-scripts
+      - name: Verify workflow identity and refresh stable
+        env:
+          CRYSTAL_RELEASE_NOTIFY_URL: ${{ vars.CRYSTAL_RELEASE_NOTIFY_URL }}
+        run: npm run ci -- notify-release
