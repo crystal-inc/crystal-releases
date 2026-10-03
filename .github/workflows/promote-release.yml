@@ -1,25 +1,22 @@
 name: Promote Crystal release
-run-name: Promote build ${{ inputs.build_id || 'current' }} to ${{ inputs.target }} from ${{ inputs.target == 'latest' && 'nightly' || inputs.stable_source }}
+run-name: Promote build ${{ inputs.build_id || 'current' }} (${{ inputs.promotion }})
 
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: Destination channel
+      promotion:
+        description: Promotion path
         type: choice
-        options: [latest, stable]
-        default: latest
+        options:
+          - nightly → latest
+          - latest → stable
+          - nightly → stable
+        default: nightly → latest
         required: true
       build_id:
         description: Build ID from a channel release; leave empty for the current build in the selected source
         type: string
         required: false
-      stable_source:
-        description: Source for stable; latest always comes from nightly
-        type: choice
-        options: [latest, nightly]
-        default: latest
-        required: true
 
 permissions:
   contents: write
@@ -51,15 +48,15 @@ jobs:
       - name: Promote exactly the selected verified build
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TARGET: ${{ inputs.target }}
-          RELEASE_SOURCE: ${{ inputs.target == 'latest' && 'nightly' || inputs.stable_source }}
+          RELEASE_TARGET: ${{ fromJSON('{"nightly → latest":"latest","latest → stable":"stable","nightly → stable":"stable"}')[inputs.promotion] }}
+          RELEASE_SOURCE: ${{ fromJSON('{"nightly → latest":"nightly","latest → stable":"latest","nightly → stable":"nightly"}')[inputs.promotion] }}
           RELEASE_BUILD_ID: ${{ inputs.build_id }}
         run: npm run release -- promote --target "$RELEASE_TARGET" --source "$RELEASE_SOURCE" --build "$RELEASE_BUILD_ID"
 
   notify:
     name: Notify connected apps about stable
     needs: promote
-    if: inputs.target == 'stable'
+    if: inputs.promotion == 'latest → stable' || inputs.promotion == 'nightly → stable'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
