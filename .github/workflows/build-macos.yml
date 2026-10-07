@@ -20,8 +20,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: native-build-${{ github.event.client_payload.build_key || github.run_id }}
-  cancel-in-progress: true
+  # Finish publication before the next nightly reads and bumps its version.
+  group: native-build-${{ github.event.client_payload.build_kind == 'nightly' && 'nightly-main' || github.run_id }}
+  cancel-in-progress: false
 
 env:
   RUSTUP_TOOLCHAIN: 1.96.0
@@ -65,6 +66,7 @@ jobs:
         env:
           RELEASE_APP_SLUG: ${{ steps.source-token.outputs.app-slug }}
           SOURCE_READ_TOKEN: ${{ steps.source-token.outputs.token }}
+          CHANNEL_READ_TOKEN: ${{ github.token }}
         run: npm run ci -- request
 
   build:
