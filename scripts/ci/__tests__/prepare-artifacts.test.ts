@@ -54,7 +54,7 @@ test("only verified installer, updater, signature and checksums leave the privat
     const metadata = {
       version: "0.1.0",
       architecture: "aarch64",
-      appSigning: "adhoc",
+      appSigning: "developer-id",
       updaterSigning: "signed",
       commit,
     };
@@ -67,7 +67,7 @@ test("only verified installer, updater, signature and checksums leave the privat
     for (const invalid of [
       null,
       {},
-      { ...metadata, appSigning: "developer-id" },
+      { ...metadata, appSigning: "adhoc" },
       { ...metadata, updaterSigning: "unsigned" },
     ]) {
       await writeFile(metadataPath, JSON.stringify(invalid));

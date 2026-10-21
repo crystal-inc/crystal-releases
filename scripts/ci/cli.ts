@@ -347,7 +347,7 @@ async function prepareArtifacts(): Promise<void> {
       version: z.literal(version),
       architecture: z.literal(arch),
       commit: z.literal(commit),
-      appSigning: z.literal("adhoc"),
+      appSigning: z.literal("developer-id"),
       updaterSigning: z.literal("signed"),
     })
     .safeParse(metadata);
