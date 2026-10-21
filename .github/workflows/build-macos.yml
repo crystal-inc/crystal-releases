@@ -217,11 +217,50 @@ jobs:
         run: bash scripts/ci/private-step.sh Types pnpm --dir apps/native exec tsc -p tsconfig.node.json --noEmit
       - name: Check native lifecycle and release metadata
         run: bash scripts/ci/private-step.sh Tests pnpm --dir apps/native exec vitest run --config vitest.release.config.ts
+      - name: Install Developer ID signing identity
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_ID APPLE_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing Apple signing configuration: $name"
+              exit 1
+            fi
+          done
+          if [[ "$APPLE_SIGNING_IDENTITY" != "Developer ID Application: "*" ($APPLE_TEAM_ID)" ]]; then
+            echo "::error::Signing identity must be a Developer ID Application certificate from the configured team."
+            exit 1
+          fi
+          certificate="$RUNNER_TEMP/crystal-signing.p12"
+          keychain="$RUNNER_TEMP/crystal-signing.keychain-db"
+          keychain_password=$(openssl rand -hex 32)
+          echo "::add-mask::$keychain_password"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -P "$APPLE_CERTIFICATE_PASSWORD" -f pkcs12 -k "$keychain" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
+          security find-identity -v -p codesigning "$keychain" | grep -F -- "\"$APPLE_SIGNING_IDENTITY\"" > /dev/null
+          rm -f "$certificate"
+          xcrun notarytool history --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" > /dev/null
       - name: Build and verify installer and authenticated updater
         env:
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: bash scripts/ci/private-step.sh Packaging pnpm --dir apps/native run release:package --updater-signing signed
+        run: bash scripts/ci/private-step.sh Packaging pnpm --dir apps/native run release:package --app-signing developer-id --updater-signing signed
       - name: Prepare explicit public artifact allowlist
         run: npm run ci -- artifacts
       - name: Upload only verified distribution artifacts
@@ -236,6 +275,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           archive: true
+      - name: Remove Apple signing credentials
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/crystal-signing.p12"
+          keychain="$RUNNER_TEMP/crystal-signing.keychain-db"
+          if [[ -f "$keychain" ]]; then
+            security list-keychains -d user -s "$HOME/Library/Keychains/login.keychain-db"
+            security delete-keychain "$keychain"
+          fi
       - name: Remove private checkout and diagnostics
         if: always()
         run: |
