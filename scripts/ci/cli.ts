@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { notifyStableRelease } from "./release-notify.ts";
+import { installAppleProvisioningProfile } from "./apple-provisioning-profile.ts";
 import {
   readNightlyBuildVersion,
   type JsonRequestOptions,
@@ -409,7 +410,7 @@ async function prepareReleaseNotification(): Promise<void> {
 export async function runCiCli(args: readonly string[]): Promise<void> {
   if (args.length !== 1)
     throw new Error(
-      "Expected one CI command: request, cache, artifacts or notify-release",
+      "Expected one CI command: request, cache, apple-profile, artifacts or notify-release",
     );
   switch (args[0]) {
     case "request":
@@ -420,6 +421,12 @@ export async function runCiCli(args: readonly string[]): Promise<void> {
       return prepareReleaseNotification();
     case "artifacts":
       return prepareArtifacts();
+    case "apple-profile":
+      return installAppleProvisioningProfile({
+        encodedProfile: requiredEnv("APPLE_PROVISIONING_PROFILE_BASE64"),
+        directory: requiredEnv("RUNNER_TEMP"),
+        githubEnv: requiredEnv("GITHUB_ENV"),
+      });
     default:
       throw new Error("Unknown CI command");
   }
