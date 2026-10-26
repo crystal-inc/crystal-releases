@@ -9,6 +9,22 @@ base64 of the complete `.provisionprofile` file, not a development profile or a
 certificate. Never commit its contents. Existing certificate and notarization
 configuration stays unchanged.
 
+Repository settings used by macOS signing:
+
+| Setting | Kind | Value |
+| --- | --- | --- |
+| `APPLE_PROVISIONING_PROFILE_BASE64` | Secret | Base64 of the production Developer ID `.provisionprofile`. |
+| `APPLE_CERTIFICATE` | Secret | Base64 of the existing Developer ID Application `.p12`, including its private key. |
+| `APPLE_CERTIFICATE_PASSWORD` | Secret | Password protecting that `.p12`. |
+| `APPLE_ID` | Secret | Apple Account used for notarization. |
+| `APPLE_PASSWORD` | Secret | App-specific password for notarization. |
+| `APPLE_SIGNING_IDENTITY` | Variable | Full Developer ID Application certificate name. |
+| `APPLE_TEAM_ID` | Variable | The certificate and profile's Apple Developer team ID. |
+
+Only `APPLE_PROVISIONING_PROFILE_BASE64` is new. The existing updater secrets
+`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` remain required.
+Development profiles and Apple Development private keys are not used by release CI.
+
 `npm run ci -- apple-profile` stages it as
 `$RUNNER_TEMP/crystal-signing.provisionprofile` with owner-only read/write access.
 It checks that Security.framework can decode the CMS envelope, then exports
