@@ -3,13 +3,30 @@ name: Build macOS installers
 on:
   workflow_dispatch:
     inputs:
+      build_kind:
+        description: Test artifacts only, or publish a nightly
+        required: true
+        default: test
+        type: choice
+        options:
+          - test
+          - nightly
+      bump:
+        description: Nightly version bump (ignored for test builds)
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
       source_ref:
         description: Trusted Crystal source branch, tag or commit
         required: true
         default: main
         type: string
       version:
-        description: Test installer version (without v)
+        description: Test installer version without v (ignored for nightly)
         required: true
         default: "0.1.0"
         type: string
@@ -21,7 +38,7 @@ permissions:
 
 concurrency:
   # Finish publication before the next nightly reads and bumps its version.
-  group: native-build-${{ github.event.client_payload.build_kind == 'nightly' && 'nightly-main' || github.run_id }}
+  group: native-build-${{ (github.event.client_payload.build_kind == 'nightly' || github.event.inputs.build_kind == 'nightly') && 'nightly-main' || github.run_id }}
   cancel-in-progress: false
 
 env:

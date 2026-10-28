@@ -48,18 +48,25 @@ export function parseBuildRequest(
     case "workflow_dispatch": {
       const result = z
         .object({
-          inputs: z.object({
-            source_ref: sourceRefSchema,
-            version: versionSchema,
-          }),
+          inputs: z.union([
+            z.object({
+              source_ref: sourceRefSchema,
+              build_kind: z.literal("test").default("test"),
+              version: versionSchema,
+            }),
+            z.object({
+              source_ref: sourceRefSchema,
+              build_kind: z.literal("nightly"),
+              bump: versionBumpSchema.default("patch"),
+            }),
+          ]),
         })
         .safeParse(event);
       if (!result.success) throw new Error("Invalid manual build request");
-      return {
-        sourceRef: result.data.inputs.source_ref,
-        version: result.data.inputs.version,
-        kind: "test",
-      };
+      const inputs = result.data.inputs;
+      return inputs.build_kind === "nightly"
+        ? { sourceRef: inputs.source_ref, kind: "nightly", bump: inputs.bump }
+        : { sourceRef: inputs.source_ref, kind: "test", version: inputs.version };
     }
     case "repository_dispatch": {
       if (!appSlug) throw new Error("Release App is missing");
