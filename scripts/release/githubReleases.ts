@@ -270,7 +270,7 @@ export class GithubReleaseRepository implements ReleaseRepository {
           "--title",
           `Crystal ${build.version} · ${channel.channel}`,
           "--notes",
-          `Build ${build.buildId}. Channel: ${channel.channel}. Promoted from: ${channel.sourceChannel ?? "main"}.\n\nAd-hoc signed macOS installers; Apple notarization is not configured.`,
+          `Build ${build.buildId}. Channel: ${channel.channel}. Promoted from: ${channel.sourceChannel ?? "main"}.\n\nDeveloper ID signed macOS installers, notarized by Apple. Updater archives are cryptographically signed.`,
         ]);
       }
       const pending = releaseSchema.parse(await this.release(tag));
