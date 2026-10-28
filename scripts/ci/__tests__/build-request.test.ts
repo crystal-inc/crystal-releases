@@ -146,7 +146,7 @@ test("helper must be the expected repository and accessible pinned commit", asyn
   }
 });
 
-test("nightly bumps the published channel version with its own read token", async () => {
+test("manual nightly ignores the test version and bumps the channel with its own read token", async () => {
   for (const [base, bump, expected] of [
     ["0.1.23", "patch", "0.1.24"],
     ["0.1.23", "minor", "0.2.0"],
@@ -172,18 +172,9 @@ test("nightly bumps the published channel version with its own read token", asyn
         ).toString("base64"),
       },
     ];
-    const request = parseBuildRequest(
-      "repository_dispatch",
-      {
-        ...dispatch,
-        client_payload: {
-          ...dispatch.client_payload,
-          build_kind: "nightly",
-          bump,
-        },
-      },
-      "crystal-release-publisher",
-    );
+    const request = parseBuildRequest("workflow_dispatch", {
+      inputs: { source_ref: "main", build_kind: "nightly", bump, version: "9.9.9" },
+    });
     const result = await resolveBuildRequest(
       request,
       "test-token",
@@ -280,13 +271,34 @@ test("nightly fails closed on an unavailable or invalid published channel", asyn
   }
 });
 
-test("manual builds cannot request nightly publication", () => {
-  assert.equal(
+test("manual builds default to tests and opt into nightly version allocation", () => {
+  assert.deepEqual(parseBuildRequest("workflow_dispatch", manual), {
+    sourceRef: manual.inputs.source_ref,
+    kind: "test",
+    version: "0.1.0",
+  });
+  assert.deepEqual(
     parseBuildRequest("workflow_dispatch", {
-      inputs: { ...manual.inputs, build_kind: "nightly" },
-    }).kind,
-    "test",
+      inputs: { ...manual.inputs, build_kind: "test", bump: "major" },
+    }),
+    { sourceRef: manual.inputs.source_ref, kind: "test", version: "0.1.0" },
   );
+  for (const bump of [undefined, "patch", "minor", "major"]) {
+    assert.deepEqual(
+      parseBuildRequest("workflow_dispatch", {
+        inputs: { source_ref: "main", build_kind: "nightly", bump },
+      }),
+      { sourceRef: "main", kind: "nightly", bump: bump ?? "patch" },
+    );
+  }
+  for (const inputs of [
+    { source_ref: "main", build_kind: "stable", version: "0.1.0" },
+    { source_ref: "main", build_kind: "nightly", bump: "invalid" },
+    { source_ref: "main", build_kind: "nightly", bump: "" },
+    { source_ref: "../main", build_kind: "nightly" },
+    { source_ref: "main", build_kind: "test" },
+  ])
+    assert.throws(() => parseBuildRequest("workflow_dispatch", { inputs }));
   assert.throws(() =>
     parseBuildRequest(
       "repository_dispatch",
@@ -300,18 +312,9 @@ test("manual builds cannot request nightly publication", () => {
 });
 
 test("rerunning a published nightly retains its immutable version", async () => {
-  const request = parseBuildRequest(
-    "repository_dispatch",
-    {
-      ...dispatch,
-      client_payload: {
-        ...dispatch.client_payload,
-        build_kind: "nightly",
-        bump: "major",
-      },
-    },
-    "crystal-release-publisher",
-  );
+  const request = parseBuildRequest("workflow_dispatch", {
+    inputs: { source_ref: commit, build_kind: "nightly", bump: "major" },
+  });
   const responses: unknown[] = [
     { sha: commit },
     {
