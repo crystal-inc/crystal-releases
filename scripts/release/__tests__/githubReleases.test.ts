@@ -15,7 +15,13 @@ for (const corrupt of [false, true])
     let assets: { name: string; size: number; digest: string }[] = [];
     const repository = new GithubReleaseRepository("test-token", {
       gh: (args) => {
-        if (args.includes("create")) created = true;
+        if (args.includes("create")) {
+          const notes = args[args.indexOf("--notes") + 1]!;
+          assert.match(notes, /Developer ID signed/u);
+          assert.match(notes, /notarized by Apple/u);
+          assert.doesNotMatch(notes, /Ad-hoc|not configured/u);
+          created = true;
+        }
         if (args.includes("upload")) {
           assert.equal(args.includes("--clobber"), false);
           assets = args.slice(args.indexOf("--repo") + 2).map((path) => {
