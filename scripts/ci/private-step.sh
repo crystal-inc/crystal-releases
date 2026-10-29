@@ -8,7 +8,16 @@ log=$(mktemp "$RUNNER_TEMP/crystal-private-XXXXXX.log")
 trap 'rm -f "$log"' EXIT
 cd "$RUNNER_TEMP/crystal-source"
 printf '%s started. Private output is suppressed.\n' "$stage"
-if "$@" > "$log" 2>&1; then
+release_phase='(wasm|mcp|local-ai-server|local-ai-resources|frontend|native-app|copy-app|provision-profile|clear-attributes|sign-plugin-host|sign-node|runtime-manifest|sign-app|verify-plugin-host|verify-app|runtime-check|notarization-archive|app-submit|app-wait|app-info|app-staple|app-validate|gatekeeper|dmg-prepare-tools|dmg-install-tools|dmg-build-image|dmg-verify-image|sign-dmg|dmg-submit|dmg-wait|dmg-info|dmg-staple|dmg-validate|node-jit|updater-archive|updater-sign|release-metadata|cleanup)'
+release_progress="^Release step: ${release_phase} (started|finished|failed)$"
+filter_progress() {
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ $release_progress ]]; then
+      printf 'Release step: %s %s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+    fi
+  done
+}
+if "$@" 2>&1 | tee "$log" 2>/dev/null | filter_progress; then
   printf '%s passed.\n' "$stage"
 else
   result=$?
