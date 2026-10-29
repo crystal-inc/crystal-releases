@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-async function runPrivateStep(script: string) {
+async function runPrivateStep(
+  script: string,
+  environment: NodeJS.ProcessEnv = {},
+) {
   const temporary = await mkdtemp(join(tmpdir(), "crystal-log-test-"));
   try {
     await mkdir(join(temporary, "crystal-source"));
@@ -19,7 +22,10 @@ async function runPrivateStep(script: string) {
         "-c",
         script,
       ],
-      { env: { ...process.env, RUNNER_TEMP: temporary }, encoding: "utf8" },
+      {
+        env: { ...process.env, ...environment, RUNNER_TEMP: temporary },
+        encoding: "utf8",
+      },
     );
     assert.deepEqual(await readdir(temporary), ["crystal-source"]);
     assert.equal(result.stderr, "");
@@ -152,4 +158,116 @@ test("DMG phase failures expose only a fixed phase while suppressing internal er
       "::error::Packaging DMG operation failed: resize.\n::error::Packaging DMG operation failed: build-image.\n" +
       failed,
   );
+});
+
+test("release progress exposes only fixed steps and lifecycle states", async () => {
+  const result = await runPrivateStep(
+    "printf '%s\\n' 'PRIVATE_SECRET' 'Release step: wasm started' 'Release step: wasm finished' 'Release step: app-submit started' 'Release step: app-submit failed'; exit 7",
+  );
+  assert.equal(result.status, 7);
+  assert.equal(
+    result.stdout,
+    started +
+      "Release step: wasm started\nRelease step: wasm finished\nRelease step: app-submit started\nRelease step: app-submit failed\n" +
+      failed,
+  );
+});
+
+test("malformed release progress and injected workflow commands remain private", async () => {
+  const lines = [
+    "Release step: PRIVATE_SECRET started",
+    "Release step: wasm PRIVATE_SECRET",
+    "Release step: wasm started PRIVATE_SECRET",
+    "PRIVATE_SECRET Release step: wasm started",
+    "Release step: wasm started::warning::PRIVATE_SECRET",
+    "Release step: wasm started\rPRIVATE_SECRET",
+    "Release step: wasm started\u001b[31mPRIVATE_SECRET",
+    "Release step: wasm\tstarted",
+    "Release step: wasm  started",
+    "Release step: wasm started ",
+    "::error::PRIVATE_SECRET",
+  ];
+  const result = await runPrivateStep(
+    `printf '%s\\n' ${lines.map((line) => `'${line}'`).join(" ")}; exit 0`,
+  );
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, started + "Packaging passed.\n");
+});
+
+test("release progress is visible before the private command finishes", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "crystal-live-log-test-"));
+  await mkdir(join(temporary, "crystal-source"));
+  const child = spawn(
+    "bash",
+    [
+      fileURLToPath(new URL("../private-step.sh", import.meta.url)),
+      "Packaging",
+      "bash",
+      "-c",
+      "printf '%s\\n' 'PRIVATE_SECRET' 'Release step: native-app started'; IFS= read -r release; printf '%s\\n' 'Release step: native-app finished'",
+    ],
+    { env: { ...process.env, RUNNER_TEMP: temporary } },
+  );
+  let stdout = "";
+  let stderr = "";
+  const closed = new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      deadline = setTimeout(
+        () =>
+          reject(
+            new Error("Release progress was buffered until command completion"),
+          ),
+        3000,
+      );
+      child.stdout.on("data", (data) => {
+        stdout += data.toString();
+        if (stdout.includes("Release step: native-app started\n")) resolve();
+      });
+      child.stderr.on("data", (data) => {
+        stderr += data.toString();
+      });
+      child.once("error", reject);
+    });
+    assert.equal(child.exitCode, null);
+    assert.equal(stdout.includes("Release step: native-app finished"), false);
+  } finally {
+    clearTimeout(deadline);
+    child.stdin.end("continue\n");
+    await closed;
+    await rm(temporary, { recursive: true, force: true });
+  }
+  assert.equal(child.exitCode, 0);
+  assert.equal(stderr, "");
+  assert.equal(
+    stdout,
+    started +
+      "Release step: native-app started\nRelease step: native-app finished\nPackaging passed.\n",
+  );
+});
+
+test("private log transport errors cannot disclose paths or arbitrary tool output", async () => {
+  const tools = await mkdtemp(join(tmpdir(), "crystal-log-transport-test-"));
+  try {
+    await writeFile(
+      join(tools, "tee"),
+      "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' 'PRIVATE_SECRET /private/source/file.ts' >&2\nexit 1\n",
+      { mode: 0o700 },
+    );
+    const result = await runPrivateStep("printf '%s\\n' PRIVATE_SOURCE", {
+      PATH: `${tools}:${process.env.PATH}`,
+    });
+    assert.equal(result.status, 1);
+    assert.equal(
+      result.stdout,
+      started +
+        "::error::Packaging failed (exit 1). Reproduce in the private source repository for diagnostics.\n",
+    );
+  } finally {
+    await rm(tools, { recursive: true, force: true });
+  }
 });
