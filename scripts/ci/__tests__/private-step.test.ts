@@ -140,3 +140,14 @@ test("malformed Apple failure breadcrumbs remain private", async () => {
   assert.equal(result.status, 7);
   assert.equal(result.stdout, started + failed);
 });
+
+test("DMG phase failures expose only a fixed phase while suppressing internal errors", async () => {
+  const result = await runPrivateStep(
+    "printf '%s\\n' 'PRIVATE_SECRET /private/source' 'DMG operation failed: phase=resize' 'DMG operation failed: phase=PRIVATE_SECRET' 'DMG operation failed: phase=detach /private/source'; exit 7",
+  );
+  assert.equal(result.status, 7);
+  assert.equal(
+    result.stdout,
+    started + "::error::Packaging DMG operation failed: resize.\n" + failed,
+  );
+});
