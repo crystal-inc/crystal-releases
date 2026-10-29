@@ -44,7 +44,7 @@ test("a rejected token request never reaches the notification receiver or leaks 
   };
   await assert.rejects(
     notifyStableRelease(input, request),
-    /^Error: Release OIDC request failed$/,
+    /^Error: Release notification failed$/,
   );
   assert.equal(calls, 1);
 });
