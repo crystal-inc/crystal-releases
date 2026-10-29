@@ -136,6 +136,10 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
+      - name: Setup Python for installer tooling
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.14"
       - name: Install CI tooling
         run: npm ci --ignore-scripts
       - name: Prepare dependency cache fingerprints
