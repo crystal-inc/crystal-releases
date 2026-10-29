@@ -119,3 +119,24 @@ test("success preserves its original summary and suppresses all private output",
   assert.equal(result.status, 0);
   assert.equal(result.stdout, started + "Packaging passed.\n");
 });
+
+test("Apple failures report only their finite artifact, operation and exit code", async () => {
+  const result = await runPrivateStep(
+    "printf '%s\\n' 'PRIVATE_SECRET /private/source/file.ts' 'Apple notarization failed: artifact=dmg operation=staple exit=1'; exit 7",
+  );
+  assert.equal(result.status, 7);
+  assert.equal(
+    result.stdout,
+    started +
+      "::error::Packaging Apple notarization failed: dmg staple (exit 1).\n" +
+      failed,
+  );
+});
+
+test("malformed Apple failure breadcrumbs remain private", async () => {
+  const result = await runPrivateStep(
+    "printf '%s\\n' 'Apple notarization failed: artifact=PRIVATE_SECRET operation=staple exit=1' 'Apple notarization failed: artifact=app operation=PRIVATE_SECRET exit=1' 'Apple notarization failed: artifact=app operation=wait exit=256' 'Apple notarization failed: artifact=app operation=wait exit=1 PRIVATE_SECRET'; exit 7",
+  );
+  assert.equal(result.status, 7);
+  assert.equal(result.stdout, started + failed);
+});
