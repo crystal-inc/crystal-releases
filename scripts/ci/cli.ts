@@ -3,7 +3,10 @@ import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { notifyStableRelease } from "./release-notify.ts";
+import {
+  notificationFailureMessage,
+  notifyStableRelease,
+} from "./release-notify.ts";
 import { installAppleProvisioningProfile } from "./apple-provisioning-profile.ts";
 import {
   readNightlyBuildVersion,
@@ -66,7 +69,11 @@ export function parseBuildRequest(
       const inputs = result.data.inputs;
       return inputs.build_kind === "nightly"
         ? { sourceRef: inputs.source_ref, kind: "nightly", bump: inputs.bump }
-        : { sourceRef: inputs.source_ref, kind: "test", version: inputs.version };
+        : {
+            sourceRef: inputs.source_ref,
+            kind: "test",
+            version: inputs.version,
+          };
     }
     case "repository_dispatch": {
       if (!appSlug) throw new Error("Release App is missing");
@@ -439,15 +446,20 @@ export async function runCiCli(args: readonly string[]): Promise<void> {
   }
 }
 
+export function ciFailureMessage(error: unknown): string {
+  return (
+    notificationFailureMessage(error) ??
+    "CI preparation failed; verify the command, configuration and source access."
+  );
+}
+
 if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  runCiCli(process.argv.slice(2)).catch(() => {
+  runCiCli(process.argv.slice(2)).catch((error: unknown) => {
     // Neither response bodies nor unexpected errors from private source reach public logs.
-    console.error(
-      "CI preparation failed; verify the command, configuration and source access.",
-    );
+    console.error(ciFailureMessage(error));
     process.exitCode = 1;
   });
 }
