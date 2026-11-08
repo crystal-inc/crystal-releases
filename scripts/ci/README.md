@@ -58,7 +58,7 @@ The environment wrapper removes GitHub's empty optional values. In local mode it
 
 ### Activation checklist
 
-- [ ] Sentry project/DSN and release-upload token configured (no dummy secrets).
+- [x] Sentry project/DSN and release-upload token configured on 8 November 2026: `crystal-wc/crystal-desktop`, public DSN and identifiers in Variables, CI-only `org:ci` token in `SENTRY_AUTH_TOKEN`. Collection remains `local`.
 - [ ] Matching analytics application and private-server changes included in the source revision.
 - [ ] OVH `/etc/crystal/api.env` configured separately: PostHog export and Sentry admission, verified supplier periods and fixed shared quotas. The code deployment does not overwrite this file.
 - [ ] Required privacy/retention/erasure gates completed before real-user collection.
