@@ -15,6 +15,10 @@ export function releaseAnalyticsEnv(input: Environment): Record<string, string |
   if (mode !== "local" && mode !== "remote")
     throw new Error("Invalid VITE_ANALYTICS_MODE; expected local or remote");
   env.VITE_ANALYTICS_MODE = mode;
+  const reports = env.AGENT_ACTIVITY_REPORTS_ENABLED || "false";
+  if (reports !== "true" && reports !== "false")
+    throw new Error("Invalid AGENT_ACTIVITY_REPORTS_ENABLED; expected true or false");
+  env.AGENT_ACTIVITY_REPORTS_ENABLED = reports;
   for (const key of optional) if (!env[key]?.trim()) delete env[key];
   if (mode === "local") {
     delete env.SENTRY_AUTH_TOKEN;

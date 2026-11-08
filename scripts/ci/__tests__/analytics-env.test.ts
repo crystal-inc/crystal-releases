@@ -5,6 +5,7 @@ import { releaseAnalyticsEnv } from "../analytics-env.ts";
 
 const ready = {
   VITE_ANALYTICS_MODE: "remote",
+  AGENT_ACTIVITY_REPORTS_ENABLED: "false",
   VITE_POSTHOG_KEY: "phc_test",
   VITE_POSTHOG_HOST: "https://eu.i.posthog.com",
   VITE_SENTRY_DSN: "https://public@o1.ingest.de.sentry.io/2",
@@ -31,7 +32,7 @@ test("GitHub empty optional values become absent, matching the source build cont
 });
 
 test("a remote build requires every endpoint, identity and upload setting", () => {
-  for (const field of Object.keys(ready).filter((key) => key !== "VITE_ANALYTICS_MODE")) {
+  for (const field of Object.keys(ready).filter((key) => key !== "VITE_ANALYTICS_MODE" && key !== "AGENT_ACTIVITY_REPORTS_ENABLED")) {
     assert.throws(() => releaseAnalyticsEnv({ ...ready, [field]: "" }), new RegExp(field));
   }
   assert.deepEqual(releaseAnalyticsEnv(ready), ready);
@@ -52,10 +53,10 @@ test("invalid mode and unsafe endpoints fail without echoing configuration", () 
 });
 
 test("the actual wrapper forwards normalized environment to its child", () => {
-  const output = execFileSync(process.execPath, ["--import", "tsx", "scripts/ci/analytics-env.ts", process.execPath, "-e", "process.stdout.write(JSON.stringify({mode:process.env.VITE_ANALYTICS_MODE,upload:!!process.env.SENTRY_AUTH_TOKEN,build:process.env.VITE_APP_BUILD}))"], {
-    env: { ...process.env, ...ready, VITE_ANALYTICS_MODE: "local" }, encoding: "utf8",
+  const output = execFileSync(process.execPath, ["--import", "tsx", "scripts/ci/analytics-env.ts", process.execPath, "-e", "process.stdout.write(JSON.stringify({mode:process.env.VITE_ANALYTICS_MODE,upload:!!process.env.SENTRY_AUTH_TOKEN,build:process.env.VITE_APP_BUILD,agent:process.env.AGENT_ACTIVITY_REPORTS_ENABLED}))"], {
+    env: { ...process.env, ...ready, VITE_ANALYTICS_MODE: "local", AGENT_ACTIVITY_REPORTS_ENABLED: "true" }, encoding: "utf8",
   });
-  assert.deepEqual(JSON.parse(output), { mode: "local", upload: false, build: ready.VITE_APP_BUILD });
+  assert.deepEqual(JSON.parse(output), { mode: "local", upload: false, build: ready.VITE_APP_BUILD, agent: "true" });
 });
 
 test("the wrapper preserves child failure and reports only missing setting names", () => {
@@ -65,4 +66,11 @@ test("the wrapper preserves child failure and reports only missing setting names
   assert.equal(invalid.status, 1);
   assert.match(invalid.stderr, /VITE_SENTRY_DSN/);
   assert.doesNotMatch(invalid.stdout + invalid.stderr, /private-token-sentinel|must-not-run/);
+});
+
+test('helper reporting is an explicit independent build-owned boolean', () => {
+  assert.equal(releaseAnalyticsEnv({}).AGENT_ACTIVITY_REPORTS_ENABLED, 'false');
+  assert.equal(releaseAnalyticsEnv({AGENT_ACTIVITY_REPORTS_ENABLED:'true'}).AGENT_ACTIVITY_REPORTS_ENABLED, 'true');
+  assert.equal(releaseAnalyticsEnv({AGENT_ACTIVITY_REPORTS_ENABLED:''}).AGENT_ACTIVITY_REPORTS_ENABLED, 'false');
+  assert.throws(() => releaseAnalyticsEnv({AGENT_ACTIVITY_REPORTS_ENABLED:'yes'}), /AGENT_ACTIVITY_REPORTS_ENABLED/);
 });

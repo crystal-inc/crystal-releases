@@ -107,6 +107,7 @@ jobs:
       CRYSTAL_BUILD_ARCH: ${{ matrix.arch }}
       # Public SDK configuration; opt-in collection is disabled until rollout.
       VITE_ANALYTICS_MODE: ${{ vars.VITE_ANALYTICS_MODE || 'local' }}
+      AGENT_ACTIVITY_REPORTS_ENABLED: ${{ vars.AGENT_ACTIVITY_REPORTS_ENABLED || 'false' }}
       VITE_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
       VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST || 'https://eu.i.posthog.com' }}
       VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}

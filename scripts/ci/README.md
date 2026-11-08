@@ -46,6 +46,7 @@ Set these **Actions Variables in crystal-inc/crystal-releases**, not only in the
 
 | Variable | Purpose |
 | --- | --- |
+| `AGENT_ACTIVITY_REPORTS_ENABLED` | `false` by default; explicit build-owned opt-in passed into the isolated desktop helper; reporting also requires current user permission |
 | `VITE_ANALYTICS_MODE` | `local` by default; change to `remote` only after the matching application/server changes, privacy gates and smoke tests are ready |
 | `VITE_POSTHOG_KEY` | Public write-only PostHog project token |
 | `VITE_POSTHOG_HOST` | EU ingestion host (`https://eu.i.posthog.com`) unless using an explicitly configured proxy |
