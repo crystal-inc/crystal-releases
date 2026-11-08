@@ -105,6 +105,14 @@ jobs:
       CRYSTAL_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       CRYSTAL_SOURCE_SHA: ${{ needs.prepare.outputs.commit }}
       CRYSTAL_BUILD_ARCH: ${{ matrix.arch }}
+      # Public SDK configuration; opt-in collection is disabled until rollout.
+      VITE_ANALYTICS_MODE: ${{ vars.VITE_ANALYTICS_MODE || 'local' }}
+      VITE_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
+      VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST || 'https://eu.i.posthog.com' }}
+      VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+      VITE_APP_BUILD: ${{ needs.prepare.outputs.version }}+${{ needs.prepare.outputs.commit }}
+      SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+      SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
     steps:
       - name: Checkout public distribution tooling
         uses: actions/checkout@v7.0.1
@@ -285,7 +293,12 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: bash scripts/ci/private-step.sh Packaging pnpm --dir apps/native run release:package --app-signing developer-id --updater-signing signed
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: >-
+          node --import tsx scripts/ci/analytics-env.ts
+          bash scripts/ci/private-step.sh Packaging
+          pnpm --dir apps/native run release:package
+          --app-signing developer-id --updater-signing signed
       - name: Prepare explicit public artifact allowlist
         run: npm run ci -- artifacts
       - name: Upload only verified distribution artifacts

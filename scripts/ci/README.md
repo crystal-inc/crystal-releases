@@ -39,3 +39,28 @@ This workflow change is prepared for the native Data Protection Keychain change.
 Configure the real profile and test both changes together before merging or
 publishing. No Apple-account login, profile creation, secret update or workflow
 execution is performed by this code change.
+
+## Optional Crystal analytics
+
+Set these **Actions Variables in crystal-inc/crystal-releases**, not only in the application repository:
+
+| Variable | Purpose |
+| --- | --- |
+| `VITE_ANALYTICS_MODE` | `local` by default; change to `remote` only after the matching application/server changes, privacy gates and smoke tests are ready |
+| `VITE_POSTHOG_KEY` | Public write-only PostHog project token |
+| `VITE_POSTHOG_HOST` | EU ingestion host (`https://eu.i.posthog.com`) unless using an explicitly configured proxy |
+| `VITE_SENTRY_DSN` | Public client DSN for the intended Sentry project |
+| `SENTRY_ORG`, `SENTRY_PROJECT` | Sentry organization and project slugs |
+
+Store the private symbol-upload token as the **Actions Secret `SENTRY_AUTH_TOKEN`**. It is available only to the packaging step, never as `VITE_` data. The workflow derives `VITE_APP_BUILD` from its prepared version and immutable source commit; both architectures, JavaScript and Rust use the same identity.
+
+The environment wrapper removes GitHub's empty optional values. In local mode it also removes the Sentry upload token, so merely adding credentials does not start uploads. Remote mode requires all SDK endpoints, project identifiers and upload credentials, and fails before packaging if incomplete. The wrapper preserves the child's exit status and never prints credential values. This does not initiate a build or enable collection on its own.
+
+### Activation checklist
+
+- [ ] Sentry project/DSN and release-upload token configured (no dummy secrets).
+- [ ] Matching analytics application and private-server changes included in the source revision.
+- [ ] OVH `/etc/crystal/api.env` configured separately: PostHog export and Sentry admission, verified supplier periods and fixed shared quotas. The code deployment does not overwrite this file.
+- [ ] Required privacy/retention/erasure gates completed before real-user collection.
+- [ ] Signed test build verifies actual event receipt, symbolication, offline/restart and exhausted budgets.
+- [ ] Explicitly switch `VITE_ANALYTICS_MODE` to `remote` and build a new release. Local `.env.local` files are not uploaded to CI; changing a variable does not modify existing installers.
