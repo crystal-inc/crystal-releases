@@ -1,24 +1,24 @@
 {
   "schemaVersion": 1,
-  "version": "0.1.38",
+  "version": "1.0.0",
   "installationPolicy": {
     "kind": "automatic"
   },
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://github.com/crystal-inc/crystal-releases/releases/download/nightly-42194655186/Crystal_0.1.38_darwin-aarch64.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTOFBzeGNuZTV4QTVJTHhVKzZaNVlyalQ1cEZrVUlqb1Fhei9aSHdteDB5bk5GdGZhbUtNRFVuN1R3S0orQ0l6SlFwWVVEeFNUNHhWMzRUWllpUHZpUXgzU21HNFFmYWdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTU4NDIxCWZpbGU6Q3J5c3RhbF8wLjEuMzhfZGFyd2luLWFhcmNoNjQuYXBwLnRhci5negpzZ1ZmVXZZMUdxc3FvVlV2a1hLV3NWSjdHWFlqcFk1MzUvdEZaclpHUWxtY0JZcFZMWmxUcGMvRG5Gbk93V2M4NUcycFVFQWZDeWU1NkJSZUNyVU9DQT09Cg==",
-      "sha256": "70a5688ac5523345932a8a627ede1b823f3b29eef3d22ed567dbca8a6fdd6e91",
-      "size": 201475693
+      "url": "https://github.com/crystal-inc/crystal-releases/releases/download/nightly-42517570009/Crystal_1.0.0_darwin-aarch64.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTOFBzeGNuZTV4QTJ5R3hOSEpUWGdiWUYrWVdFVWZnWDdjUGJMUFgrR21IYXoyZk50aSsyRDlWNWR1MnlxNDNRT1puZlk2amczZ0JMK1RrdGc5ZEtJaFlYWVFnTzdWd3d3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTY5NTEyCWZpbGU6Q3J5c3RhbF8xLjAuMF9kYXJ3aW4tYWFyY2g2NC5hcHAudGFyLmd6CmVaMHBrYzd4SGR3ZnYzSCtoSkt5SDQ5OElOYitvOXk3MnFMRWZ3V0dlODQxYWszQ2ZMd2VPbVdkck45THNMMWJVNDA0MzNGR2trWXBrbEpzQklDRUR3PT0K",
+      "sha256": "bf132883003ca9ba454c86acfa7021226c5b677cba65857bb39fd941bd9d5332",
+      "size": 202415781
     },
     "darwin-x86_64": {
-      "url": "https://github.com/crystal-inc/crystal-releases/releases/download/nightly-42194655186/Crystal_0.1.38_darwin-x86_64.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTOFBzeGNuZTV4QXpDaWcrMy9KUGtyZkpDWHozYUNhZXZQQWx2U3hJUHBURThyNzVKNTFZb1hOZUNxSXRIRURaQTdJbnNnY1U5Rm9JV2dibGt5ZDZIUkd6U1NaeldSWndJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTU5MDQ4CWZpbGU6Q3J5c3RhbF8wLjEuMzhfZGFyd2luLXg4Nl82NC5hcHAudGFyLmd6CityVm9uMmsvVEpENDRMV3lXbHR2Z1NWeEVxaXBJTWFkZVBaMVdBRmU2UURIaG5ZSll5dHc0UUNnbEU5R3VadnU1YzlEZVFnL3prYzVwL2ZjVFFZVENBPT0K",
-      "sha256": "407450319c71812ad227cb999916646639687d863c5d0b796311097c23ba5972",
-      "size": 205217973
+      "url": "https://github.com/crystal-inc/crystal-releases/releases/download/nightly-42517570009/Crystal_1.0.0_darwin-x86_64.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTOFBzeGNuZTV4QTRSSmYrRjdPdTU4aEtGY3d5ZmpTUCt0Z1JrSHRxYVhpQnNIVEtZTUlSSktJTXdOK3dFVjNDRVRheFp1a0lFazN0U2hMaEtOQWphbnFCUUpDQnN0RUE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTcwNzU4CWZpbGU6Q3J5c3RhbF8xLjAuMF9kYXJ3aW4teDg2XzY0LmFwcC50YXIuZ3oKdnNIeXNOQmhqWU5vNGlQMjg0TFhVdFZIT3hXcHE1MWtPb2I3UE8zZ0RQazdPNmxHRG9SZ2UzN2J2VFRNaUJTSjhwOS9FUDBtay9KZFErM0J3dWliQmc9PQo=",
+      "sha256": "b77be050ed51472f095819348f4c1685dd862af9d396b4e2277b8b7c559c5c70",
+      "size": 206195387
     }
   },
   "channel": "nightly",
-  "buildId": "42194655186",
-  "releaseTag": "nightly-42194655186"
+  "buildId": "42517570009",
+  "releaseTag": "nightly-42517570009"
 }
