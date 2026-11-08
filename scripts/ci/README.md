@@ -46,7 +46,6 @@ Set these **Actions Variables in crystal-inc/crystal-releases**, not only in the
 
 | Variable | Purpose |
 | --- | --- |
-| `AGENT_ACTIVITY_REPORTS_ENABLED` | `false` by default; explicit build-owned opt-in passed into the isolated desktop helper; reporting also requires current user permission |
 | `VITE_ANALYTICS_MODE` | `local` by default; change to `remote` only after the matching application/server changes, privacy gates and smoke tests are ready |
 | `VITE_POSTHOG_KEY` | Public write-only PostHog project token |
 | `VITE_POSTHOG_HOST` | EU ingestion host (`https://eu.i.posthog.com`) unless using an explicitly configured proxy |
@@ -59,7 +58,7 @@ The environment wrapper removes GitHub's empty optional values. In local mode it
 
 ### Activation checklist
 
-- [x] Sentry project/DSN and release-upload token configured on 8 November 2026: `crystal-wc/crystal-desktop`, public DSN and identifiers in Variables, CI-only `org:ci` token in `SENTRY_AUTH_TOKEN`. Collection remains `local`.
+- [x] Sentry project/DSN and release-upload token configured on 8 November 2026: `crystal-wc/crystal-desktop`, DSN in an Actions Secret (or Variable), identifiers in Variables, CI-only `org:ci` token in `SENTRY_AUTH_TOKEN`. Collection remains `local`.
 - [ ] Matching analytics application and private-server changes included in the source revision.
 - [ ] OVH `/etc/crystal/api.env` configured separately: PostHog export and Sentry admission, verified supplier periods and fixed shared quotas. The code deployment does not overwrite this file.
 - [ ] Required privacy/retention/erasure gates completed before real-user collection.
